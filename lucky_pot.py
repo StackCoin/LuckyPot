@@ -4,11 +4,12 @@ import hikari
 import lightbulb
 from dotenv import load_dotenv
 from stackcoin_python import AuthenticatedClient
+from stackcoin_python.types import Unset
 from stackcoin_python.models import (
-    BalanceResponse,
+    UsersResponse,
 )
 from stackcoin_python.api.default import (
-    stackcoin_self_balance,
+    stackcoin_users,
 )
 
 load_dotenv()
@@ -16,6 +17,9 @@ load_dotenv()
 token = os.getenv("LUCKY_POT_DISCORD_TOKEN")
 stackcoin_bot_token = os.getenv("LUCKY_POT_STACKCOIN_BOT_TOKEN")
 stackcoin_base_url = os.getenv("LUCKY_POT_STACKCOIN_BASE_URL")
+
+testing_guild_id = os.getenv("LUCKY_POT_TESTING_GUILD_ID")
+
 if not token:
     raise ValueError("LUCKY_POT_DISCORD_TOKEN is not set")
 
@@ -42,24 +46,33 @@ lightbulb_client = lightbulb.client_from_app(bot)
 
 bot.subscribe(hikari.StartingEvent, lightbulb_client.start)
 
+guilds = [int(testing_guild_id)] if testing_guild_id else []
 
-@lightbulb_client.register()
-class Ping(
+
+@lightbulb_client.register(guilds=guilds)
+class EnterPot(
     lightbulb.SlashCommand,
-    name="ping",
-    description="checks the bot is alive",
+    name="enter-pot",
+    description="Enter the daily lucky pot!",
 ):
     @lightbulb.invoke
     async def invoke(self, ctx: lightbulb.Context) -> None:
         async with get_client() as client:
-            my_balance = await stackcoin_self_balance.asyncio(client=client)
-
-            if not isinstance(my_balance, BalanceResponse):
-                raise Exception("Failed to get balance")
-
-            await ctx.respond(
-                f"Logged in as {my_balance.username} with balance {my_balance.balance}"
+            users = await stackcoin_users.asyncio(
+                client=client, discord_id=str(ctx.user.id)
             )
+
+            if not isinstance(users, UsersResponse) or isinstance(users.users, Unset):
+                raise Exception("Failed to get users")
+
+            if len(users.users) == 0:
+                await ctx.respond(
+                    "You are not registered with StackCoin!, please run /dole first."
+                )
+
+            user = users.users[0]
+
+            await ctx.respond(f"Hello {user.username}, welcome to the lucky pot!")
 
 
 if __name__ == "__main__":
