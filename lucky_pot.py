@@ -16,7 +16,9 @@ load_dotenv()
 
 token = os.getenv("LUCKY_POT_DISCORD_TOKEN")
 stackcoin_bot_token = os.getenv("LUCKY_POT_STACKCOIN_BOT_TOKEN")
-stackcoin_base_url = os.getenv("LUCKY_POT_STACKCOIN_BASE_URL")
+stackcoin_base_url = (
+    os.getenv("LUCKY_POT_STACKCOIN_BASE_URL") or "https://stackcoin.world"
+)
 
 testing_guild_id = os.getenv("LUCKY_POT_TESTING_GUILD_ID")
 
@@ -25,9 +27,6 @@ if not token:
 
 if not stackcoin_bot_token:
     raise ValueError("LUCKY_POT_STACKCOIN_BOT_TOKEN is not set")
-
-if not stackcoin_base_url:
-    raise ValueError("LUCKY_POT_STACKCOIN_BASE_URL is not set")
 
 
 def get_client():
