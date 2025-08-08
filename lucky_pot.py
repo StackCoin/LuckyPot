@@ -1,5 +1,7 @@
-import hikari
 import os
+
+import hikari
+import lightbulb
 from dotenv import load_dotenv
 from stackcoin_python import AuthenticatedClient
 from stackcoin_python.models import (
@@ -36,28 +38,26 @@ def get_client():
 
 
 bot = hikari.GatewayBot(token=token)
+lightbulb_client = lightbulb.client_from_app(bot)
+
+bot.subscribe(hikari.StartingEvent, lightbulb_client.start)
 
 
-@bot.listen()
-async def handle_mention(event: hikari.GuildMessageCreateEvent) -> None:
-    if not event.is_human:
-        return
-
-    me = bot.get_me()
-
-    if me is None:
-        raise ValueError("Bot is not connected to the gateway")
-
-    mentions = event.message.user_mentions_ids or []
-
-    if me.id in mentions:
+@lightbulb_client.register()
+class Ping(
+    lightbulb.SlashCommand,
+    name="ping",
+    description="checks the bot is alive",
+):
+    @lightbulb.invoke
+    async def invoke(self, ctx: lightbulb.Context) -> None:
         async with get_client() as client:
             my_balance = await stackcoin_self_balance.asyncio(client=client)
 
             if not isinstance(my_balance, BalanceResponse):
                 raise Exception("Failed to get balance")
 
-            await event.message.respond(
+            await ctx.respond(
                 f"Logged in as {my_balance.username} with balance {my_balance.balance}"
             )
 
