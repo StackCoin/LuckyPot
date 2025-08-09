@@ -7,5 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "hikari>=2.3.5",
     "hikari-lightbulb>=3.1.1",
+    "loguru>=0.7.3",
     "python-dotenv>=1.1.1",
+    "schedule>=1.2.0",
 ]
