@@ -43,6 +43,7 @@ stackcoin_base_url = (
 )
 
 testing_guild_id = os.getenv("LUCKY_POT_TESTING_GUILD_ID")
+debug_mode = os.getenv("LUCKY_POT_DEBUG_MODE", "false").lower() == "true"
 
 if not token:
     raise ValueError("LUCKY_POT_DISCORD_TOKEN is not set")
@@ -74,7 +75,7 @@ class Database:
                     discord_id TEXT NOT NULL,
                     guild_id TEXT NOT NULL,
                     total_wins INTEGER DEFAULT 0,
-                    total_winnings REAL DEFAULT 0.0,
+                    total_winnings INTEGER DEFAULT 0,
                     last_entry_time TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (discord_id, guild_id)
@@ -86,7 +87,7 @@ class Database:
                     pot_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id TEXT NOT NULL,
                     winner_id TEXT NULL,
-                    winning_amount REAL DEFAULT 0.0,
+                    winning_amount INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     won_at TIMESTAMP NULL,
                     is_active BOOLEAN DEFAULT TRUE
@@ -99,7 +100,7 @@ class Database:
                     pot_id INTEGER NOT NULL,
                     discord_id TEXT NOT NULL,
                     guild_id TEXT NOT NULL,
-                    amount REAL NOT NULL DEFAULT 5.0,
+                    amount INTEGER NOT NULL DEFAULT 5,
                     status TEXT DEFAULT 'unconfirmed',
                     stackcoin_request_id TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -248,7 +249,7 @@ class Database:
                 (pot["pot_id"],),
             )
 
-            total_pot = cursor.fetchone()[0] or 0.0
+            total_pot = cursor.fetchone()[0] or 0
 
             return {
                 "exists": True,
@@ -327,7 +328,7 @@ class Database:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def win_pot(self, guild_id: str, winner_id: str, winning_amount: float) -> None:
+    def win_pot(self, guild_id: str, winner_id: str, winning_amount: int) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -357,7 +358,7 @@ class Database:
             return [row[0] for row in cursor.fetchall()]
 
 
-async def send_winnings_to_user(winner_discord_id: str, amount: float) -> bool:
+async def send_winnings_to_user(winner_discord_id: str, amount: int) -> bool:
     """Send STK winnings to the winner"""
     try:
         async with get_client() as client:
@@ -479,7 +480,7 @@ async def process_stackcoin_requests():
                                             await announce_to_guild(
                                                 entry["pot_guild_id"],
                                                 f"🎉 **INSTANT WIN!** 🎉\n\n"
-                                                f"<@{entry['discord_id']}> has won the pot of **{winning_amount:.1f} STK**!\n"
+                                                f"<@{entry['discord_id']}> has won the pot of **{winning_amount} STK**!\n"
                                                 f"Congratulations! 🎊\n\n"
                                                 f"A new pot has started - use `/enter-pot` to join!",
                                             )
@@ -535,7 +536,7 @@ async def daily_pot_draw():
                         await announce_to_guild(
                             guild_id,
                             f"🎉 **DAILY DRAW WINNER!** 🎉\n\n"
-                            f"<@{winner_id}> has won the daily pot of **{winning_amount:.1f} STK**!\n"
+                            f"<@{winner_id}> has won the daily pot of **{winning_amount} STK**!\n"
                             f"Congratulations! 🎊\n\n"
                             f"A new pot has started - use `/enter-pot` to join!",
                         )
@@ -551,7 +552,7 @@ async def daily_pot_draw():
                     await announce_to_guild(
                         guild_id,
                         f"🎲 Daily draw occurred, but the pot continues! No winner this time.\n"
-                        f"Current pot: **{pot_status['total_amount']:.1f} STK**\n"
+                        f"Current pot: **{pot_status['total_amount']} STK**\n"
                         f"Use `/enter-pot` to increase your chances!",
                     )
 
@@ -661,11 +662,11 @@ class EnterPot(
                     # Get current pot total for instant win
                     current_status = db.get_pot_status(guild_id)
                     pot_total = (
-                        current_status.get("total_amount", 0.0) + 5.0
+                        current_status.get("total_amount", 0) + 5
                     )  # Include this entry
 
                     await ctx.respond(
-                        f"🎉 **INSTANT WIN!** {user.username}, you've won the entire pot of {pot_total:.1f} STK!"
+                        f"🎉 **INSTANT WIN!** {user.username}, you've won the entire pot of {pot_total} STK!"
                     )
                 else:
                     await ctx.respond(
@@ -698,7 +699,7 @@ class PotStatus(
         )
 
         embed.add_field(
-            name="💰 Total Pot", value=f"{status['total_amount']:.1f} STK", inline=True
+            name="💰 Total Pot", value=f"{status['total_amount']} STK", inline=True
         )
 
         embed.add_field(
@@ -732,5 +733,74 @@ class PotStatus(
         await ctx.respond(embed=embed)
 
 
+if debug_mode:
+
+    @lightbulb_client.register(guilds=guilds)
+    class ForceEndPot(
+        lightbulb.SlashCommand,
+        name="force-end-pot",
+        description="[DEBUG] Force end the current pot with a draw",
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            guild_id = str(ctx.guild_id)
+
+            pot_status = db.get_pot_status(guild_id)
+
+            if not pot_status["exists"]:
+                await ctx.respond("❌ No active pot to end!")
+                return
+
+            if pot_status["participant_count"] == 0:
+                await ctx.respond("❌ Cannot end pot with no participants!")
+                return
+
+            try:
+                participants = db.get_active_pot_participants(guild_id)
+                if participants:
+                    # Weight by number of entries
+                    weighted_participants = []
+                    for p in participants:
+                        weighted_participants.extend([p["discord_id"]] * p["entries"])
+
+                    winner_id = random.choice(weighted_participants)
+                    winning_amount = pot_status["total_amount"]
+
+                    # Send winnings to winner
+                    if await send_winnings_to_user(winner_id, winning_amount):
+                        db.win_pot(guild_id, winner_id, winning_amount)
+
+                        # Announce win
+                        await announce_to_guild(
+                            guild_id,
+                            f"🎉 **DEBUG FORCE END!** 🎉\n\n"
+                            f"<@{winner_id}> has won the pot of **{winning_amount} STK**!\n"
+                            f"Congratulations! 🎊\n\n"
+                            f"A new pot has started - use `/enter-pot` to join!",
+                        )
+
+                        await ctx.respond(
+                            f"✅ Pot ended! Winner: <@{winner_id}> won {winning_amount} STK"
+                        )
+                        logger.info(
+                            f"DEBUG: Force ended pot in guild {guild_id}: {winner_id} won {winning_amount} STK"
+                        )
+                    else:
+                        await ctx.respond(
+                            f"❌ Failed to send winnings to <@{winner_id}>"
+                        )
+                        logger.error(
+                            f"DEBUG: Failed to send winnings to {winner_id} in guild {guild_id}"
+                        )
+                else:
+                    await ctx.respond("❌ No confirmed participants found!")
+
+            except Exception as e:
+                await ctx.respond(f"❌ Error ending pot: {str(e)}")
+                logger.error(f"DEBUG: Error force ending pot in guild {guild_id}: {e}")
+
+
 if __name__ == "__main__":
+    if debug_mode:
+        logger.info("DEBUG MODE ENABLED - /force-end-pot command available")
     bot.run()
