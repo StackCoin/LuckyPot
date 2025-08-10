@@ -9,25 +9,7 @@ import schedule
 from dotenv import load_dotenv
 from loguru import logger
 import db
-from stackcoin_python import AuthenticatedClient
-from stackcoin_python.types import Unset
-from stackcoin_python.models import (
-    UsersResponse,
-    CreateRequestParams,
-    CreateRequestResponse,
-    RequestsResponse,
-    SendStkParams,
-    SendStkResponse,
-    DiscordGuildResponse,
-)
-from stackcoin_python.api.default import (
-    stackcoin_users,
-    stackcoin_create_request,
-    stackcoin_requests,
-    stackcoin_deny_request,
-    stackcoin_discord_guild,
-    stackcoin_send_stk,
-)
+import stk
 
 load_dotenv()
 
@@ -36,107 +18,36 @@ logger.add("lucky_pot.log", rotation="1 day", retention="7 days", level="INFO")
 logger.info("Starting LuckyPot Discord Bot")
 
 token = os.getenv("LUCKY_POT_DISCORD_TOKEN")
-stackcoin_bot_token = os.getenv("LUCKY_POT_STACKCOIN_BOT_TOKEN")
-stackcoin_base_url = (
-    os.getenv("LUCKY_POT_STACKCOIN_BASE_URL") or "https://stackcoin.world"
-)
-
 testing_guild_id = os.getenv("LUCKY_POT_TESTING_GUILD_ID")
 debug_mode = os.getenv("LUCKY_POT_DEBUG_MODE", "false").lower() == "true"
 
 if not token:
     raise ValueError("LUCKY_POT_DISCORD_TOKEN is not set")
 
-if not stackcoin_bot_token:
-    raise ValueError("LUCKY_POT_STACKCOIN_BOT_TOKEN is not set")
-
-
-def get_client():
-    global stackcoin_base_url, stackcoin_bot_token
-
-    if not stackcoin_base_url or not stackcoin_bot_token:
-        raise ValueError(
-            "LUCKY_POT_STACKCOIN_BASE_URL or LUCKY_POT_STACKCOIN_BOT_TOKEN is not set"
-        )
-
-    return AuthenticatedClient(base_url=stackcoin_base_url, token=stackcoin_bot_token)
-
-
-
-
 
 async def send_winnings_to_user(winner_discord_id: str, amount: int) -> bool:
     """Send STK winnings to the winner"""
-    try:
-        async with get_client() as client:
-            # Get winner's StackCoin user info
-            users_response = await stackcoin_users.asyncio(
-                client=client, discord_id=winner_discord_id
-            )
-
-            if not isinstance(users_response, UsersResponse) or isinstance(
-                users_response.users, Unset
-            ):
-                logger.error(f"Failed to get user info for {winner_discord_id}")
-                return False
-
-            if len(users_response.users) == 0:
-                logger.error(
-                    f"No StackCoin user found for Discord ID {winner_discord_id}"
-                )
-                return False
-
-            winner_user = users_response.users[0]
-
-            winner_user_id = winner_user.id
-
-            if isinstance(winner_user_id, Unset):
-                logger.error(f"No StackCoin user ID found for {winner_discord_id}")
-                return False
-
-            # Send STK to winner
-            send_response = await stackcoin_send_stk.asyncio(
-                client=client,
-                user_id=winner_user_id,
-                body=SendStkParams(amount=int(amount), label="Lucky Pot Winnings"),
-            )
-
-            if isinstance(send_response, SendStkResponse) and send_response.success:
-                logger.info(f"Successfully sent {amount} STK to {winner_user.username}")
-                return True
-            else:
-                logger.error(f"Failed to send STK to {winner_user.username}")
-                return False
-
-    except Exception as e:
-        logger.error(f"Error sending winnings to {winner_discord_id}: {e}")
-        return False
+    return await stk.send_stk(winner_discord_id, amount, "Lucky Pot Winnings")
 
 
 async def announce_to_guild(guild_id: str, message: str) -> None:
     """Send announcement to guild's designated channel"""
     try:
-        async with get_client() as client:
-            guild_response = await stackcoin_discord_guild.asyncio(
-                client=client, snowflake=guild_id
-            )
+        channel_snowflake = await stk.get_guild_channel(guild_id)
 
-            if (
-                isinstance(guild_response, DiscordGuildResponse)
-                and guild_response.designated_channel_snowflake
-            ):
-                channel_id = int(guild_response.designated_channel_snowflake)
-                channel = bot.cache.get_guild_channel(channel_id)
+        if channel_snowflake:
+            channel_id = int(channel_snowflake)
+            channel = bot.cache.get_guild_channel(channel_id)
 
-                if channel and isinstance(channel, hikari.TextableGuildChannel):
-                    await channel.send(message)
-                    logger.info(f"Announced to guild {guild_id}: {message}")
-                else:
-                    logger.warning(
-                        f"Could not find channel {channel_id} in guild {guild_id}"
-                    )
+            if channel and isinstance(channel, hikari.TextableGuildChannel):
+                await channel.send(message)
+                logger.info(f"Announced to guild {guild_id}: {message}")
             else:
-                logger.warning(f"No designated channel found for guild {guild_id}")
+                logger.warning(
+                    f"Could not find channel {channel_id} in guild {guild_id}"
+                )
+        else:
+            logger.warning(f"No designated channel found for guild {guild_id}")
 
     except Exception as e:
         logger.error(f"Error announcing to guild {guild_id}: {e}")
@@ -144,70 +55,54 @@ async def announce_to_guild(guild_id: str, message: str) -> None:
 
 async def process_stackcoin_requests():
     """Background task to process StackCoin requests"""
-
-    logger.debug("Processing StackCoin requests")
-
     try:
-        async with get_client() as client:
-            unconfirmed_entries = db.get_unconfirmed_entries()
+        unconfirmed_entries = db.get_unconfirmed_entries()
+        accepted_requests = await stk.get_accepted_requests()
 
-            for entry in unconfirmed_entries:
-                try:
-                    requests_response = await stackcoin_requests.asyncio(
-                        client=client, role="requester", status="accepted"
-                    )
+        for entry in unconfirmed_entries:
+            try:
+                # Check if this entry's request was accepted
+                for request in accepted_requests:
+                    if request["id"] == entry["stackcoin_request_id"]:
+                        db.confirm_entry(entry["entry_id"])
+                        logger.info(
+                            f"Confirmed entry {entry['entry_id']} for request {request['id']}"
+                        )
 
-                    logger.debug(f"Requests response: {requests_response}")
-
-                    if isinstance(
-                        requests_response, RequestsResponse
-                    ) and not isinstance(requests_response.requests, Unset):
-                        for request in requests_response.requests:
-                            if str(request.id) == entry["stackcoin_request_id"]:
-                                db.confirm_entry(entry["entry_id"])
-                                logger.info(
-                                    f"Confirmed entry {entry['entry_id']} for request {request.id}"
-                                )
-
-                                # Handle instant win
-                                if entry["status"] == "instant_win":
-                                    pot_status = db.get_pot_status(
-                                        entry["pot_guild_id"]
+                        # Handle instant win
+                        if entry["status"] == "instant_win":
+                            pot_status = db.get_pot_status(entry["pot_guild_id"])
+                            if pot_status is not None:
+                                winning_amount = pot_status["total_amount"]
+                                if await send_winnings_to_user(
+                                    entry["discord_id"], winning_amount
+                                ):
+                                    db.win_pot(
+                                        entry["pot_guild_id"],
+                                        entry["discord_id"],
+                                        winning_amount,
                                     )
-                                    if pot_status["exists"]:
-                                        winning_amount = pot_status["total_amount"]
-                                        if await send_winnings_to_user(
-                                            entry["discord_id"], winning_amount
-                                        ):
-                                            db.win_pot(
-                                                entry["pot_guild_id"],
-                                                entry["discord_id"],
-                                                winning_amount,
-                                            )
-                                            await announce_to_guild(
-                                                entry["pot_guild_id"],
-                                                f"🎉 **INSTANT WIN!** 🎉\n\n"
-                                                f"<@{entry['discord_id']}> has won the pot of **{winning_amount} STK**!\n"
-                                                f"Congratulations! 🎊\n\n"
-                                                f"A new pot has started - use `/enter-pot` to join!",
-                                            )
-                                break
+                                    await announce_to_guild(
+                                        entry["pot_guild_id"],
+                                        f"🎉 **INSTANT WIN!** 🎉\n\n"
+                                        f"<@{entry['discord_id']}> has won the pot of **{winning_amount} STK**!\n"
+                                        f"Congratulations! 🎊\n\n"
+                                        f"A new pot has started - use `/enter-pot` to join!",
+                                    )
+                        break
 
-                except Exception as e:
-                    logger.error(f"Error processing entry {entry['entry_id']}: {e}")
+            except Exception as e:
+                logger.error(f"Error processing entry {entry['entry_id']}: {e}")
 
-            expired_entries = db.get_expired_entries()
-            for entry in expired_entries:
-                try:
-                    await stackcoin_deny_request.asyncio(
-                        client=client, request_id=int(entry["stackcoin_request_id"])
-                    )
+        # Handle expired entries
+        expired_entries = db.get_expired_entries()
+        for entry in expired_entries:
+            try:
+                if await stk.deny_request(entry["stackcoin_request_id"]):
                     db.deny_entry(entry["entry_id"])
                     logger.info(f"Denied expired entry {entry['entry_id']}")
-                except Exception as e:
-                    logger.error(
-                        f"Error denying expired entry {entry['entry_id']}: {e}"
-                    )
+            except Exception as e:
+                logger.error(f"Error denying expired entry {entry['entry_id']}: {e}")
 
     except Exception as e:
         logger.error(f"Error in process_stackcoin_requests: {e}")
@@ -221,7 +116,7 @@ async def daily_pot_draw():
         for guild_id in all_guilds:
             pot_status = db.get_pot_status(guild_id)
 
-            if not pot_status["exists"] or pot_status["participant_count"] == 0:
+            if pot_status is None or pot_status["participant_count"] == 0:
                 continue
 
             if random.random() < 0.4:  # 40% chance to win
@@ -310,78 +205,65 @@ class EnterPot(
         guild_id = str(ctx.guild_id)
         discord_id = str(ctx.user.id)
 
-        async with get_client() as client:
-            users = await stackcoin_users.asyncio(client=client, discord_id=discord_id)
+        user = await stk.get_user_by_discord_id(discord_id)
 
-            if not isinstance(users, UsersResponse) or isinstance(users.users, Unset):
-                await ctx.respond("❌ Failed to verify your StackCoin account.")
+        if not user:
+            await ctx.respond(
+                "❌ You are not registered with StackCoin! Please run `/dole` first."
+            )
+            return
+
+        db.get_or_create_user(discord_id, guild_id)
+
+        current_pot = db.get_current_pot(guild_id)
+        if not current_pot:
+            pot_id = db.create_new_pot(guild_id)
+        else:
+            pot_id = current_pot["pot_id"]
+
+        if not db.can_user_enter_pot(discord_id, guild_id, pot_id):
+            await ctx.respond("⏰ You can only enter the pot once every 6 hours!")
+            return
+
+        try:
+            request_id = await stk.create_payment_request(
+                user["id"], 5, "Lucky Pot Entry"
+            )
+
+            if not request_id:
+                await ctx.respond("❌ Failed to create payment request.")
                 return
 
-            if len(users.users) == 0:
+            instant_win = random.random() < 0.05
+            entry_id = db.create_pot_entry(
+                pot_id,
+                discord_id,
+                guild_id,
+                request_id,
+                instant_win,
+            )
+            logger.debug(f"Pot Entry ID: {entry_id}")
+
+            if instant_win:
+                # Get current pot total for instant win
+                current_status = db.get_pot_status(guild_id)
+                if current_status is None:
+                    raise Exception("No active pot, but we just created one?")
+
+                pot_total = (
+                    current_status.get("total_amount", 0) + 5
+                )  # Include this entry
+
                 await ctx.respond(
-                    "❌ You are not registered with StackCoin! Please run `/dole` first."
+                    f"🎉 **INSTANT WIN!** {user['username']}, you've won the entire pot of {pot_total} STK!"
                 )
-                return
-
-            user = users.users[0]
-
-            db.get_or_create_user(discord_id, guild_id)
-
-            current_pot = db.get_current_pot(guild_id)
-            if not current_pot:
-                pot_id = db.create_new_pot(guild_id)
             else:
-                pot_id = current_pot["pot_id"]
-
-            if not db.can_user_enter_pot(discord_id, guild_id, pot_id):
-                await ctx.respond("⏰ You can only enter the pot once every 6 hours!")
-                return
-
-            try:
-                user_id = user.id
-                if isinstance(user_id, Unset):
-                    logger.error(f"No StackCoin user ID found for {discord_id}")
-                    await ctx.respond("❌ Failed to create payment request.")
-                    return
-
-                request_response = await stackcoin_create_request.asyncio(
-                    client=client,
-                    user_id=user_id,
-                    body=CreateRequestParams(amount=5, label="Entry to Lucky Pot"),
+                await ctx.respond(
+                    f"🎲 {user['username']}, you've entered the lucky pot! Please accept the 5 STK payment request. Good luck!"
                 )
 
-                if not isinstance(request_response, CreateRequestResponse):
-                    await ctx.respond("❌ Failed to create payment request.")
-                    return
-
-                instant_win = random.random() < 0.05
-                entry_id = db.create_pot_entry(
-                    pot_id,
-                    discord_id,
-                    guild_id,
-                    str(request_response.request_id),
-                    instant_win,
-                )
-
-                logger.debug(f"Pot entry ID: {entry_id}")
-
-                if instant_win:
-                    # Get current pot total for instant win
-                    current_status = db.get_pot_status(guild_id)
-                    pot_total = (
-                        current_status.get("total_amount", 0) + 5
-                    )  # Include this entry
-
-                    await ctx.respond(
-                        f"🎉 **INSTANT WIN!** {user.username}, you've won the entire pot of {pot_total} STK!"
-                    )
-                else:
-                    await ctx.respond(
-                        f"🎲 {user.username}, you've entered the lucky pot! Please accept the 5 STK payment request. Good luck!"
-                    )
-
-            except Exception as e:
-                await ctx.respond(f"❌ Error creating pot entry: {str(e)}")
+        except Exception as e:
+            await ctx.respond(f"❌ Error creating pot entry: {str(e)}")
 
 
 @lightbulb_client.register(guilds=guilds)
@@ -395,7 +277,7 @@ class PotStatus(
         guild_id = str(ctx.guild_id)
         status = db.get_pot_status(guild_id)
 
-        if not status["exists"]:
+        if status is None:
             await ctx.respond("🎲 No active pot! Use `/enter-pot` to start one.")
             return
 
@@ -454,7 +336,7 @@ if debug_mode:
 
             pot_status = db.get_pot_status(guild_id)
 
-            if not pot_status["exists"]:
+            if pot_status is None:
                 await ctx.respond("❌ No active pot to end!")
                 return
 

@@ -161,10 +161,10 @@ def create_pot_entry(
         return entry_id
 
 
-def get_pot_status(guild_id: str) -> Dict[str, Any]:
+def get_pot_status(guild_id: str) -> Dict[str, Any] | None:
     pot = get_current_pot(guild_id)
     if not pot:
-        return {"exists": False}
+        return None
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -193,7 +193,6 @@ def get_pot_status(guild_id: str) -> Dict[str, Any]:
         total_pot = cursor.fetchone()[0] or 0
 
         return {
-            "exists": True,
             "pot_id": pot["pot_id"],
             "total_amount": total_pot,
             "participant_count": len(participants),
