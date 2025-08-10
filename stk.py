@@ -1,5 +1,4 @@
 import os
-from typing import Optional, List, Dict, Any
 from loguru import logger
 from stackcoin_python import AuthenticatedClient
 from stackcoin_python.types import Unset
@@ -11,6 +10,8 @@ from stackcoin_python.models import (
     SendStkParams,
     SendStkResponse,
     DiscordGuildResponse,
+    User,
+    Request,
 )
 from stackcoin_python.api.default import (
     stackcoin_users,
@@ -35,7 +36,7 @@ def get_client():
     return AuthenticatedClient(base_url=STACKCOIN_BASE_URL, token=STACKCOIN_BOT_TOKEN)
 
 
-async def get_user_by_discord_id(discord_id: str) -> Optional[Dict[str, Any]]:
+async def get_user_by_discord_id(discord_id: str) -> User | None:
     """Get StackCoin user by Discord ID"""
     try:
         async with get_client() as client:
@@ -53,13 +54,7 @@ async def get_user_by_discord_id(discord_id: str) -> Optional[Dict[str, Any]]:
                 logger.warning(f"No StackCoin user found for Discord ID {discord_id}")
                 return None
 
-            user = response.users[0]
-            return {
-                "id": user.id,
-                "username": user.username,
-                "balance": user.balance,
-                "discord_id": discord_id,
-            }
+            return response.users[0]
     except Exception as e:
         logger.error(f"Error getting user by Discord ID {discord_id}: {e}")
         return None
@@ -67,7 +62,7 @@ async def get_user_by_discord_id(discord_id: str) -> Optional[Dict[str, Any]]:
 
 async def create_payment_request(
     user_id: int, amount: int, label: str = "Lucky Pot Entry"
-) -> Optional[str]:
+) -> str | None:
     """Create a payment request and return request ID"""
     try:
         async with get_client() as client:
@@ -95,47 +90,69 @@ async def send_stk(discord_id: str, amount: int, label: str) -> bool:
             return False
 
         async with get_client() as client:
+            if not isinstance(user.id, int):
+                raise Exception("User ID is not an integer")
+
             response = await stackcoin_send_stk.asyncio(
                 client=client,
-                user_id=user["id"],
+                user_id=user.id,
                 body=SendStkParams(amount=amount, label=label),
             )
 
             if isinstance(response, SendStkResponse) and response.success:
-                logger.info(f"Successfully sent {amount} STK to {user['username']}")
+                logger.info(f"Successfully sent {amount} STK to {user.username}")
                 return True
             else:
-                logger.error(f"Failed to send {amount} STK to {user['username']}")
+                logger.error(f"Failed to send {amount} STK to {user.username}")
                 return False
     except Exception as e:
         logger.error(f"Error sending {amount} STK to Discord ID {discord_id}: {e}")
         return False
 
 
-async def get_accepted_requests() -> List[Dict[str, Any]]:
-    """Get all accepted payment requests"""
+async def get_accepted_requests() -> list[Request]:
+    """Get all accepted payment requests from the last 2 hours with pagination"""
     try:
-        async with get_client() as client:
-            response = await stackcoin_requests.asyncio(
-                client=client, role="responder", status="accepted"
-            )
+        all_requests = []
+        page = 1
 
-            if isinstance(response, RequestsResponse) and not isinstance(
-                response.requests, Unset
-            ):
-                return [
-                    {
-                        "id": str(request.id),
-                        "amount": request.amount,
-                        "status": request.status,
-                        "requester_id": request.requester.id
-                        if request.requester
-                        else None,
-                        "requested_at": request.requested_at,
-                    }
-                    for request in response.requests
-                ]
-            return []
+        async with get_client() as client:
+            while True:
+                response = await stackcoin_requests.asyncio(
+                    client=client,
+                    role="responder",
+                    status="accepted",
+                    since="2h",
+                    page=page,
+                )
+
+                if not isinstance(response, RequestsResponse) or isinstance(
+                    response.requests, Unset
+                ):
+                    break
+
+                if not response.requests:
+                    break
+
+                all_requests.extend(response.requests)
+
+                total_pages = (
+                    response.pagination.total_pages
+                    if not isinstance(response.pagination, Unset)
+                    else None
+                )
+
+                if (
+                    isinstance(response.pagination, Unset)
+                    or total_pages is None
+                    or isinstance(total_pages, Unset)
+                    or page >= total_pages
+                ):
+                    break
+
+                page += 1
+
+        return all_requests
     except Exception as e:
         logger.error(f"Error getting accepted requests: {e}")
         return []
@@ -154,7 +171,7 @@ async def deny_request(request_id: str) -> bool:
         return False
 
 
-async def get_guild_channel(guild_id: str) -> Optional[str]:
+async def get_guild_channel(guild_id: str) -> str | None:
     """Get designated channel for a guild"""
     try:
         async with get_client() as client:

@@ -1,5 +1,47 @@
 import sqlite3
-from typing import Optional, List, Dict, Any
+from typing_extensions import TypedDict
+
+
+class Pot(TypedDict):
+    pot_id: int
+    guild_id: str
+    winner_id: str | None
+    winning_amount: int
+    created_at: str
+    won_at: str | None
+    is_active: bool
+
+
+class PotEntry(TypedDict):
+    entry_id: int
+    pot_id: int
+    discord_id: str
+    guild_id: str
+    amount: int
+    status: str
+    stackcoin_request_id: str
+    created_at: str
+    confirmed_at: str | None
+    pot_guild_id: str
+
+
+class Participant(TypedDict):
+    discord_id: str
+    entries: int
+
+
+class ParticipantWithAmount(TypedDict):
+    discord_id: str
+    entry_count: int
+    total_amount: int
+
+
+class PotStatus(TypedDict):
+    pot_id: int
+    total_amount: int
+    participant_count: int
+    participants: list[ParticipantWithAmount]
+    created_at: str
 
 
 DB_PATH = "lucky_pot.db"
@@ -83,7 +125,7 @@ def get_or_create_user(discord_id: str, guild_id: str) -> None:
         conn.commit()
 
 
-def get_current_pot(guild_id: str) -> Optional[Dict[str, Any]]:
+def get_current_pot(guild_id: str) -> Pot | None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
@@ -95,7 +137,7 @@ def get_current_pot(guild_id: str) -> Optional[Dict[str, Any]]:
             (guild_id,),
         )
         row = cursor.fetchone()
-        return dict(row) if row else None
+        return Pot(**dict(row)) if row else None
 
 
 def create_new_pot(guild_id: str) -> int:
@@ -161,7 +203,7 @@ def create_pot_entry(
         return entry_id
 
 
-def get_pot_status(guild_id: str) -> Dict[str, Any] | None:
+def get_pot_status(guild_id: str) -> PotStatus | None:
     pot = get_current_pot(guild_id)
     if not pot:
         return None
@@ -180,7 +222,7 @@ def get_pot_status(guild_id: str) -> Dict[str, Any] | None:
             (pot["pot_id"],),
         )
 
-        participants = [dict(row) for row in cursor.fetchall()]
+        participants = [ParticipantWithAmount(**dict(row)) for row in cursor.fetchall()]
 
         cursor = conn.execute(
             """
@@ -192,13 +234,13 @@ def get_pot_status(guild_id: str) -> Dict[str, Any] | None:
 
         total_pot = cursor.fetchone()[0] or 0
 
-        return {
-            "pot_id": pot["pot_id"],
-            "total_amount": total_pot,
-            "participant_count": len(participants),
-            "participants": participants,
-            "created_at": pot["created_at"],
-        }
+        return PotStatus(
+            pot_id=pot["pot_id"],
+            total_amount=total_pot,
+            participant_count=len(participants),
+            participants=participants,
+            created_at=pot["created_at"],
+        )
 
 
 def confirm_entry(entry_id: int) -> None:
@@ -227,7 +269,7 @@ def deny_entry(entry_id: int) -> None:
         conn.commit()
 
 
-def get_unconfirmed_entries() -> List[Dict[str, Any]]:
+def get_unconfirmed_entries() -> list[PotEntry]:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute("""
@@ -238,10 +280,10 @@ def get_unconfirmed_entries() -> List[Dict[str, Any]]:
               AND pe.created_at > datetime('now', '-1 hour')
             ORDER BY pe.created_at ASC
         """)
-        return [dict(row) for row in cursor.fetchall()]
+        return [PotEntry(**dict(row)) for row in cursor.fetchall()]
 
 
-def get_expired_entries() -> List[Dict[str, Any]]:
+def get_expired_entries() -> list[PotEntry]:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute("""
@@ -252,10 +294,10 @@ def get_expired_entries() -> List[Dict[str, Any]]:
               AND pe.created_at <= datetime('now', '-1 hour')
             ORDER BY pe.created_at ASC
         """)
-        return [dict(row) for row in cursor.fetchall()]
+        return [PotEntry(**dict(row)) for row in cursor.fetchall()]
 
 
-def get_active_pot_participants(guild_id: str) -> List[Dict[str, Any]]:
+def get_active_pot_participants(guild_id: str) -> list[Participant]:
     pot = get_current_pot(guild_id)
     if not pot:
         return []
@@ -271,7 +313,7 @@ def get_active_pot_participants(guild_id: str) -> List[Dict[str, Any]]:
         """,
             (pot["pot_id"],),
         )
-        return [dict(row) for row in cursor.fetchall()]
+        return [Participant(**dict(row)) for row in cursor.fetchall()]
 
 
 def win_pot(guild_id: str, winner_id: str, winning_amount: int) -> None:
@@ -297,7 +339,7 @@ def win_pot(guild_id: str, winner_id: str, winning_amount: int) -> None:
         conn.commit()
 
 
-def get_all_active_guilds() -> List[str]:
+def get_all_active_guilds() -> list[str]:
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.execute("""
             SELECT DISTINCT guild_id FROM pots WHERE is_active = TRUE
