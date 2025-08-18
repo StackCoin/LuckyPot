@@ -1,21 +1,22 @@
-import os
 import random
 import asyncio
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing_extensions import TypedDict
 
 import hikari
 import lightbulb
 import schedule
-from dotenv import load_dotenv
 from loguru import logger
 import db
 import stk
+import config
 
-load_dotenv()
 
-# Constants
 POT_ENTRY_COST = 5
+CHECK_INTERVAL_SECONDS = 30
+DAILY_DRAW_CHANCE = 0.6
+RANDOM_WIN_CHANCE = 0.05
 
 
 class WinnerInfo(TypedDict):
@@ -27,11 +28,7 @@ class WinnerInfo(TypedDict):
 logger.add("lucky_pot.log", rotation="1 day", retention="7 days", level="INFO")
 logger.info("Starting LuckyPot Discord Bot")
 
-token = os.getenv("LUCKY_POT_DISCORD_TOKEN")
-testing_guild_id = os.getenv("LUCKY_POT_TESTING_GUILD_ID")
-debug_mode = os.getenv("LUCKY_POT_DEBUG_MODE", "false").lower() == "true"
-
-if not token:
+if not config.DISCORD_TOKEN:
     raise ValueError("LUCKY_POT_DISCORD_TOKEN is not set")
 
 
@@ -59,36 +56,43 @@ async def announce_to_guild(guild_id: str, message: str) -> None:
 
 async def process_stackcoin_requests():
     """Background task to process StackCoin requests"""
-    unconfirmed_entries = db.get_unconfirmed_entries()
+    with db.get_connection() as conn:
+        unconfirmed_entries = db.get_unconfirmed_entries(conn)
+
     accepted_requests = await stk.get_accepted_requests()
 
     for entry in unconfirmed_entries:
-        # Check if this entry's request was accepted
         for request in accepted_requests:
             if str(request.id) == entry["stackcoin_request_id"]:
-                db.confirm_entry(entry["entry_id"])
+                if entry["status"] == "instant_win":
+                    with db.get_transaction() as conn:
+                        db.confirm_entry(conn, entry["entry_id"])
+                        pot_status = db.get_pot_status(conn, entry["pot_guild_id"])
+                        if pot_status is not None:
+                            winning_amount = pot_status["total_amount"]
+                            await process_pot_win(
+                                conn,
+                                entry["pot_guild_id"],
+                                entry["discord_id"],
+                                winning_amount,
+                                "INSTANT WIN",
+                            )
+                else:
+                    with db.get_transaction() as conn:
+                        db.confirm_entry(conn, entry["entry_id"])
+
                 logger.info(
                     f"Confirmed entry {entry['entry_id']} for request {request.id}"
                 )
-
-                # Handle instant win
-                if entry["status"] == "instant_win":
-                    pot_status = db.get_pot_status(entry["pot_guild_id"])
-                    if pot_status is not None:
-                        winning_amount = pot_status["total_amount"]
-                        await process_pot_win(
-                            entry["pot_guild_id"],
-                            entry["discord_id"],
-                            winning_amount,
-                            "INSTANT WIN",
-                        )
                 break
 
-    # Handle expired entries
-    expired_entries = db.get_expired_entries()
+    with db.get_connection() as conn:
+        expired_entries = db.get_expired_entries(conn)
+
     for entry in expired_entries:
         if await stk.deny_request(entry["stackcoin_request_id"]):
-            db.deny_entry(entry["entry_id"])
+            with db.get_transaction() as conn:
+                db.deny_entry(conn, entry["entry_id"])
             logger.info(f"Denied expired entry {entry['entry_id']}")
 
 
@@ -101,11 +105,15 @@ def select_weighted_winner(participants: list[db.Participant]) -> str:
 
 
 async def process_pot_win(
-    guild_id: str, winner_id: str, winning_amount: int, win_type: str = "DAILY DRAW"
+    conn: sqlite3.Connection,
+    guild_id: str,
+    winner_id: str,
+    winning_amount: int,
+    win_type: str = "DAILY DRAW",
 ) -> bool:
     """Process a pot win: send winnings and announce"""
     if await send_winnings_to_user(winner_id, winning_amount):
-        db.win_pot(guild_id, winner_id, winning_amount)
+        db.win_pot(conn, guild_id, winner_id, winning_amount)
 
         await announce_to_guild(
             guild_id,
@@ -128,41 +136,51 @@ async def end_pot_with_winner(
     guild_id: str, win_type: str = "DAILY DRAW"
 ) -> WinnerInfo | None:
     """End a pot by selecting and paying a winner. Returns winner info or None if failed."""
-    pot_status = db.get_pot_status(guild_id)
+    with db.get_transaction() as conn:
+        pot_status = db.get_pot_status(conn, guild_id)
 
-    if pot_status is None or pot_status["participant_count"] == 0:
-        return None
+        if pot_status is None or pot_status["participant_count"] == 0:
+            return None
 
-    participants = db.get_active_pot_participants(guild_id)
-    if not participants:
-        return None
+        participants = db.get_active_pot_participants(conn, guild_id)
+        if not participants:
+            return None
 
-    winner_id = select_weighted_winner(participants)
-    winning_amount = pot_status["total_amount"]
+        winner_id = select_weighted_winner(participants)
+        winning_amount = pot_status["total_amount"]
 
-    if await process_pot_win(guild_id, winner_id, winning_amount, win_type):
-        return WinnerInfo(
-            winner_id=winner_id,
-            winning_amount=winning_amount,
-            participant_count=pot_status["participant_count"],
-        )
+        if await process_pot_win(conn, guild_id, winner_id, winning_amount, win_type):
+            return WinnerInfo(
+                winner_id=winner_id,
+                winning_amount=winning_amount,
+                participant_count=pot_status["participant_count"],
+            )
 
     return None
 
 
 async def daily_pot_draw():
     """Daily pot draw at UTC 0 with 40% win chance"""
-    all_guilds = db.get_all_active_guilds()
+    with db.get_connection() as conn:
+        all_guilds = db.get_all_active_guilds(conn)
 
     for guild_id in all_guilds:
-        pot_status = db.get_pot_status(guild_id)
+        with db.get_connection() as conn:
+            pot_status = db.get_pot_status(conn, guild_id)
 
-        if pot_status is None or pot_status["participant_count"] == 0:
-            continue
+            if pot_status is None or pot_status["participant_count"] == 0:
+                continue
 
-        if random.random() < 0.4:  # 40% chance to win
-            winner_info = await end_pot_with_winner(guild_id, "DAILY DRAW")
-            if not winner_info:
+            if random.random() < DAILY_DRAW_CHANCE:
+                winner_info = await end_pot_with_winner(guild_id, "DAILY DRAW")
+                if not winner_info:
+                    await announce_to_guild(
+                        guild_id,
+                        f"🎲 Daily draw occurred, but the pot continues! No winner this time.\n"
+                        f"Current pot: **{pot_status['total_amount']} STK**\n"
+                        f"Use `/enter-pot` to increase your chances!",
+                    )
+            else:
                 await announce_to_guild(
                     guild_id,
                     f"🎲 Daily draw occurred, but the pot continues! No winner this time.\n"
@@ -177,22 +195,20 @@ async def background_tasks():
         try:
             await process_stackcoin_requests()
 
-            # Run scheduled tasks
             schedule.run_pending()
 
         except Exception as e:
             logger.error(f"Error in background tasks: {e}")
 
-        await asyncio.sleep(30)  # Check every 30 seconds
+        await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
 
-# Schedule daily draw
 schedule.every().day.at("00:00").do(lambda: asyncio.create_task(daily_pot_draw()))
 
 
 db.init_database()
 
-bot = hikari.GatewayBot(token=token)
+bot = hikari.GatewayBot(token=config.DISCORD_TOKEN)
 lightbulb_client = lightbulb.client_from_app(bot)
 
 bot.subscribe(hikari.StartingEvent, lightbulb_client.start)
@@ -208,7 +224,7 @@ async def on_starting(event: hikari.StartingEvent) -> None:
         exit(0)
 
 
-guilds = [int(testing_guild_id)] if testing_guild_id else []
+guilds = [int(config.TESTING_GUILD_ID)] if config.TESTING_GUILD_ID else []
 
 
 @lightbulb_client.register(guilds=guilds)
@@ -231,18 +247,6 @@ class EnterPot(
                 )
                 return
 
-            db.get_or_create_user(discord_id, guild_id)
-
-            current_pot = db.get_current_pot(guild_id)
-            if not current_pot:
-                pot_id = db.create_new_pot(guild_id)
-            else:
-                pot_id = current_pot["pot_id"]
-
-            if not db.can_user_enter_pot(discord_id, guild_id, pot_id):
-                await ctx.respond("⏰ You can only enter the pot once every 6 hours!")
-                return
-
             if not isinstance(user.id, int):
                 raise Exception("User ID is not an integer")
 
@@ -254,24 +258,43 @@ class EnterPot(
                 await ctx.respond("❌ Failed to create payment request.")
                 return
 
-            instant_win = random.random() < 0.05
-            entry_id = db.create_pot_entry(
-                pot_id,
-                discord_id,
-                guild_id,
-                request_id,
-                instant_win,
-            )
+            instant_win = random.random() < RANDOM_WIN_CHANCE
+
+            with db.get_transaction() as conn:
+                db.get_or_create_user(conn, discord_id, guild_id)
+
+                current_pot = db.get_current_pot(conn, guild_id)
+                if not current_pot:
+                    pot_id = db.create_new_pot(conn, guild_id)
+                else:
+                    pot_id = current_pot["pot_id"]
+
+                if not db.can_user_enter_pot(conn, discord_id, guild_id, pot_id):
+                    await ctx.respond(
+                        "⏰ You can only enter the pot once every 6 hours!"
+                    )
+                    return
+
+                entry_id = db.create_pot_entry(
+                    conn,
+                    pot_id,
+                    discord_id,
+                    guild_id,
+                    request_id,
+                    instant_win,
+                )
+
+                if instant_win:
+                    current_status = db.get_pot_status(conn, guild_id)
+                    if current_status is None:
+                        raise Exception("No active pot, but we just created one?")
+                    pot_total = current_status.get("total_amount", 0) + POT_ENTRY_COST
+                else:
+                    pot_total = None
+
             logger.debug(f"Pot Entry ID: {entry_id}")
 
             if instant_win:
-                # Get current pot total for instant win
-                current_status = db.get_pot_status(guild_id)
-                if current_status is None:
-                    raise Exception("No active pot, but we just created one?")
-
-                pot_total = current_status.get("total_amount", 0) + POT_ENTRY_COST
-
                 await ctx.respond(
                     f"🎉 **INSTANT WIN!** {user.username}, you've won the entire pot of {pot_total} STK!"
                 )
@@ -295,7 +318,9 @@ class PotStatus(
     async def invoke(self, ctx: lightbulb.Context) -> None:
         try:
             guild_id = str(ctx.guild_id)
-            status = db.get_pot_status(guild_id)
+
+            with db.get_connection() as conn:
+                status = db.get_pot_status(conn, guild_id)
 
             if status is None:
                 await ctx.respond("🎲 No active pot! Use `/enter-pot` to start one.")
@@ -319,7 +344,7 @@ class PotStatus(
 
             if status["participants"]:
                 participant_list = []
-                for p in status["participants"][:10]:  # Show top 10
+                for p in status["participants"][:10]:
                     participant_list.append(
                         f"<@{p['discord_id']}>: {p['entry_count']} entries"
                     )
@@ -350,7 +375,7 @@ class PotStatus(
             await ctx.respond("❌ Error retrieving pot status. Please try again later.")
 
 
-if debug_mode:
+if config.DEBUG_MODE:
 
     @lightbulb_client.register(guilds=guilds)
     class ForceEndPot(
@@ -363,7 +388,8 @@ if debug_mode:
             try:
                 guild_id = str(ctx.guild_id)
 
-                pot_status = db.get_pot_status(guild_id)
+                with db.get_connection() as conn:
+                    pot_status = db.get_pot_status(conn, guild_id)
 
                 if pot_status is None:
                     await ctx.respond("❌ No active pot to end!")
@@ -390,6 +416,6 @@ if debug_mode:
 
 
 if __name__ == "__main__":
-    if debug_mode:
+    if config.DEBUG_MODE:
         logger.info("DEBUG MODE ENABLED - /force-end-pot command available")
     bot.run()

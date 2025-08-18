@@ -1,4 +1,3 @@
-import os
 from loguru import logger
 from stackcoin_python import AuthenticatedClient
 from stackcoin_python.types import Unset
@@ -21,19 +20,16 @@ from stackcoin_python.api.default import (
     stackcoin_discord_guild,
     stackcoin_send_stk,
 )
-
-# Configuration
-STACKCOIN_BOT_TOKEN = os.getenv("LUCKY_POT_STACKCOIN_BOT_TOKEN")
-STACKCOIN_BASE_URL = (
-    os.getenv("LUCKY_POT_STACKCOIN_BASE_URL") or "https://stackcoin.world"
-)
+import config
 
 
 def get_client():
     """Get authenticated StackCoin client"""
-    if not STACKCOIN_BASE_URL or not STACKCOIN_BOT_TOKEN:
+    if not config.STACKCOIN_BASE_URL or not config.STACKCOIN_BOT_TOKEN:
         raise ValueError("StackCoin credentials not configured")
-    return AuthenticatedClient(base_url=STACKCOIN_BASE_URL, token=STACKCOIN_BOT_TOKEN)
+    return AuthenticatedClient(
+        base_url=config.STACKCOIN_BASE_URL, token=config.STACKCOIN_BOT_TOKEN
+    )
 
 
 async def get_user_by_discord_id(discord_id: str) -> User | None:
@@ -103,7 +99,9 @@ async def send_stk(discord_id: str, amount: int, label: str) -> bool:
                 logger.info(f"Successfully sent {amount} STK to {user.username}")
                 return True
             else:
-                logger.error(f"Failed to send {amount} STK to {user.username}")
+                logger.error(
+                    f"Failed to send {amount} STK to {user.username}, response: {response}"
+                )
                 return False
     except Exception as e:
         logger.error(f"Error sending {amount} STK to Discord ID {discord_id}: {e}")
@@ -165,7 +163,7 @@ async def deny_request(request_id: str) -> bool:
             await stackcoin_deny_request.asyncio(
                 client=client, request_id=int(request_id)
             )
-            return True  # If no exception, assume success
+            return True
     except Exception as e:
         logger.error(f"Error denying request {request_id}: {e}")
         return False

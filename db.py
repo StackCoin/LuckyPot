@@ -1,4 +1,6 @@
 import sqlite3
+from contextlib import contextmanager
+from typing import Generator
 from typing_extensions import TypedDict
 
 
@@ -47,8 +49,34 @@ class PotStatus(TypedDict):
 DB_PATH = "lucky_pot.db"
 
 
+@contextmanager
+def get_connection() -> Generator[sqlite3.Connection, None, None]:
+    """Get a database connection with automatic cleanup"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
+def get_transaction() -> Generator[sqlite3.Connection, None, None]:
+    """Get a database connection with transaction management"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def init_database():
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 discord_id TEXT NOT NULL,
@@ -113,235 +141,232 @@ def init_database():
         conn.commit()
 
 
-def get_or_create_user(discord_id: str, guild_id: str) -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO users (discord_id, guild_id)
-            VALUES (?, ?)
-        """,
-            (discord_id, guild_id),
-        )
-        conn.commit()
+def get_or_create_user(
+    conn: sqlite3.Connection, discord_id: str, guild_id: str
+) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO users (discord_id, guild_id)
+        VALUES (?, ?)
+    """,
+        (discord_id, guild_id),
+    )
 
 
-def get_current_pot(guild_id: str) -> Pot | None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
-            """
-            SELECT * FROM pots 
-            WHERE guild_id = ? AND is_active = TRUE AND winner_id IS NULL
-            ORDER BY created_at DESC LIMIT 1
-        """,
-            (guild_id,),
-        )
-        row = cursor.fetchone()
-        return Pot(**dict(row)) if row else None
+def get_current_pot(conn: sqlite3.Connection, guild_id: str) -> Pot | None:
+    cursor = conn.execute(
+        """
+        SELECT * FROM pots
+        WHERE guild_id = ? AND is_active = TRUE AND winner_id IS NULL
+        ORDER BY created_at DESC LIMIT 1
+    """,
+        (guild_id,),
+    )
+    row = cursor.fetchone()
+    return Pot(**dict(row)) if row else None
 
 
-def create_new_pot(guild_id: str) -> int:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO pots (guild_id) VALUES (?)
-        """,
-            (guild_id,),
-        )
-        conn.commit()
-        last_row_id = cursor.lastrowid
-        if last_row_id is None:
-            raise Exception("Failed to create new pot")
-        return last_row_id
+def create_new_pot(conn: sqlite3.Connection, guild_id: str) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO pots (guild_id) VALUES (?)
+    """,
+        (guild_id,),
+    )
+    last_row_id = cursor.lastrowid
+    if last_row_id is None:
+        raise Exception("Failed to create new pot")
+    return last_row_id
 
 
-def can_user_enter_pot(discord_id: str, guild_id: str, pot_id: int) -> bool:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.execute(
-            """
-            SELECT COUNT(*) FROM pot_entries 
-            WHERE discord_id = ? AND guild_id = ? AND pot_id = ?
-              AND created_at > datetime('now', '-6 hours')
-              AND status IN ('confirmed', 'unconfirmed')
-        """,
-            (discord_id, guild_id, pot_id),
-        )
-        count = cursor.fetchone()[0]
-        return count == 0
+def can_user_enter_pot(
+    conn: sqlite3.Connection, discord_id: str, guild_id: str, pot_id: int
+) -> bool:
+    cursor = conn.execute(
+        """
+        SELECT COUNT(*) FROM pot_entries
+        WHERE discord_id = ? AND guild_id = ? AND pot_id = ?
+          AND created_at > datetime('now', '-6 hours')
+          AND status IN ('confirmed', 'unconfirmed')
+    """,
+        (discord_id, guild_id, pot_id),
+    )
+    count = cursor.fetchone()[0]
+    return count == 0
 
 
 def create_pot_entry(
+    conn: sqlite3.Connection,
     pot_id: int,
     discord_id: str,
     guild_id: str,
     stackcoin_request_id: str,
     is_instant_win: bool = False,
 ) -> int:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.execute(
+    cursor = conn.execute(
+        """
+        INSERT INTO pot_entries (pot_id, discord_id, guild_id, stackcoin_request_id)
+        VALUES (?, ?, ?, ?)
+    """,
+        (pot_id, discord_id, guild_id, stackcoin_request_id),
+    )
+
+    entry_id = cursor.lastrowid
+    if entry_id is None:
+        raise Exception("Failed to create pot entry")
+
+    if is_instant_win:
+        cursor.execute(
             """
-            INSERT INTO pot_entries (pot_id, discord_id, guild_id, stackcoin_request_id)
-            VALUES (?, ?, ?, ?)
+            UPDATE pot_entries SET status = 'instant_win' WHERE entry_id = ?
         """,
-            (pot_id, discord_id, guild_id, stackcoin_request_id),
+            (entry_id,),
         )
 
-        entry_id = cursor.lastrowid
-        if entry_id is None:
-            raise Exception("Failed to create pot entry")
-
-        # Mark as instant win in a separate field if needed
-        if is_instant_win:
-            cursor.execute(
-                """
-                UPDATE pot_entries SET status = 'instant_win' WHERE entry_id = ?
-            """,
-                (entry_id,),
-            )
-
-        conn.commit()
-        return entry_id
+    return entry_id
 
 
-def get_pot_status(guild_id: str) -> PotStatus | None:
-    pot = get_current_pot(guild_id)
+def get_pot_status(conn: sqlite3.Connection, guild_id: str) -> PotStatus | None:
+    pot = get_current_pot(conn, guild_id)
     if not pot:
         return None
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
+    cursor = conn.execute(
+        """
+        SELECT discord_id, COUNT(*) as entry_count, SUM(amount) as total_amount
+        FROM pot_entries
+        WHERE pot_id = ? AND status = 'confirmed'
+        GROUP BY discord_id
+        ORDER BY entry_count DESC, total_amount DESC
+    """,
+        (pot["pot_id"],),
+    )
 
-        cursor = conn.execute(
-            """
-            SELECT discord_id, COUNT(*) as entry_count, SUM(amount) as total_amount
-            FROM pot_entries 
-            WHERE pot_id = ? AND status = 'confirmed'
-            GROUP BY discord_id
-            ORDER BY entry_count DESC, total_amount DESC
-        """,
-            (pot["pot_id"],),
-        )
+    participants = [ParticipantWithAmount(**dict(row)) for row in cursor.fetchall()]
 
-        participants = [ParticipantWithAmount(**dict(row)) for row in cursor.fetchall()]
+    cursor = conn.execute(
+        """
+        SELECT SUM(amount) as total_pot FROM pot_entries
+        WHERE pot_id = ? AND status = 'confirmed'
+    """,
+        (pot["pot_id"],),
+    )
 
-        cursor = conn.execute(
-            """
-            SELECT SUM(amount) as total_pot FROM pot_entries 
-            WHERE pot_id = ? AND status = 'confirmed'
-        """,
-            (pot["pot_id"],),
-        )
+    total_pot = cursor.fetchone()[0] or 0
 
-        total_pot = cursor.fetchone()[0] or 0
-
-        return PotStatus(
-            pot_id=pot["pot_id"],
-            total_amount=total_pot,
-            participant_count=len(participants),
-            participants=participants,
-            created_at=pot["created_at"],
-        )
+    return PotStatus(
+        pot_id=pot["pot_id"],
+        total_amount=total_pot,
+        participant_count=len(participants),
+        participants=participants,
+        created_at=pot["created_at"],
+    )
 
 
-def confirm_entry(entry_id: int) -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            UPDATE pot_entries 
-            SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP
-            WHERE entry_id = ?
-        """,
-            (entry_id,),
-        )
-        conn.commit()
+def confirm_entry(conn: sqlite3.Connection, entry_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE pot_entries
+        SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP
+        WHERE entry_id = ?
+    """,
+        (entry_id,),
+    )
 
 
-def deny_entry(entry_id: int) -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            UPDATE pot_entries 
-            SET status = 'denied'
-            WHERE entry_id = ?
-        """,
-            (entry_id,),
-        )
-        conn.commit()
+def deny_entry(conn: sqlite3.Connection, entry_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE pot_entries
+        SET status = 'denied'
+        WHERE entry_id = ?
+    """,
+        (entry_id,),
+    )
 
 
-def get_unconfirmed_entries() -> list[PotEntry]:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.execute("""
-            SELECT pe.*, p.guild_id as pot_guild_id
-            FROM pot_entries pe
-            JOIN pots p ON pe.pot_id = p.pot_id
-            WHERE pe.status = 'unconfirmed'
-              AND pe.created_at > datetime('now', '-1 hour')
-            ORDER BY pe.created_at ASC
-        """)
-        return [PotEntry(**dict(row)) for row in cursor.fetchall()]
+def get_unconfirmed_entries(conn: sqlite3.Connection) -> list[PotEntry]:
+    cursor = conn.execute("""
+        SELECT pe.*, p.guild_id as pot_guild_id
+        FROM pot_entries pe
+        JOIN pots p ON pe.pot_id = p.pot_id
+        WHERE pe.status = 'unconfirmed'
+          AND pe.created_at > datetime('now', '-1 hour')
+        ORDER BY pe.created_at ASC
+    """)
+    return [PotEntry(**dict(row)) for row in cursor.fetchall()]
 
 
-def get_expired_entries() -> list[PotEntry]:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.execute("""
-            SELECT pe.*, p.guild_id as pot_guild_id
-            FROM pot_entries pe
-            JOIN pots p ON pe.pot_id = p.pot_id
-            WHERE pe.status = 'unconfirmed'
-              AND pe.created_at <= datetime('now', '-1 hour')
-            ORDER BY pe.created_at ASC
-        """)
-        return [PotEntry(**dict(row)) for row in cursor.fetchall()]
+def get_expired_entries(conn: sqlite3.Connection) -> list[PotEntry]:
+    cursor = conn.execute("""
+        SELECT pe.*, p.guild_id as pot_guild_id
+        FROM pot_entries pe
+        JOIN pots p ON pe.pot_id = p.pot_id
+        WHERE pe.status = 'unconfirmed'
+          AND pe.created_at <= datetime('now', '-1 hour')
+        ORDER BY pe.created_at ASC
+    """)
+    return [PotEntry(**dict(row)) for row in cursor.fetchall()]
 
 
-def get_active_pot_participants(guild_id: str) -> list[Participant]:
-    pot = get_current_pot(guild_id)
+def get_active_pot_participants(
+    conn: sqlite3.Connection, guild_id: str
+) -> list[Participant]:
+    pot = get_current_pot(conn, guild_id)
     if not pot:
         return []
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
-            """
-            SELECT discord_id, COUNT(*) as entries
-            FROM pot_entries 
-            WHERE pot_id = ? AND status = 'confirmed'
-            GROUP BY discord_id
-        """,
-            (pot["pot_id"],),
-        )
-        return [Participant(**dict(row)) for row in cursor.fetchall()]
+    cursor = conn.execute(
+        """
+        SELECT discord_id, COUNT(*) as entries
+        FROM pot_entries
+        WHERE pot_id = ? AND status = 'confirmed'
+        GROUP BY discord_id
+    """,
+        (pot["pot_id"],),
+    )
+    return [Participant(**dict(row)) for row in cursor.fetchall()]
 
 
-def win_pot(guild_id: str, winner_id: str, winning_amount: int) -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            UPDATE pots 
-            SET winner_id = ?, winning_amount = ?, won_at = CURRENT_TIMESTAMP, is_active = FALSE
-            WHERE guild_id = ? AND is_active = TRUE AND winner_id IS NULL
-        """,
-            (winner_id, winning_amount, guild_id),
-        )
+def win_pot(
+    conn: sqlite3.Connection, guild_id: str, winner_id: str, winning_amount: int
+) -> None:
+    conn.execute(
+        """
+        UPDATE pots
+        SET winner_id = ?, winning_amount = ?, won_at = CURRENT_TIMESTAMP, is_active = FALSE
+        WHERE guild_id = ? AND is_active = TRUE AND winner_id IS NULL
+    """,
+        (winner_id, winning_amount, guild_id),
+    )
 
-        conn.execute(
-            """
-            UPDATE users 
-            SET total_wins = total_wins + 1, total_winnings = total_winnings + ?
-            WHERE discord_id = ? AND guild_id = ?
-        """,
-            (winning_amount, winner_id, guild_id),
-        )
-
-        conn.commit()
+    conn.execute(
+        """
+        UPDATE users
+        SET total_wins = total_wins + 1, total_winnings = total_winnings + ?
+        WHERE discord_id = ? AND guild_id = ?
+    """,
+        (winning_amount, winner_id, guild_id),
+    )
 
 
-def get_all_active_guilds() -> list[str]:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.execute("""
-            SELECT DISTINCT guild_id FROM pots WHERE is_active = TRUE
-        """)
-        return [row[0] for row in cursor.fetchall()]
+def get_all_active_guilds(conn: sqlite3.Connection) -> list[str]:
+    cursor = conn.execute("""
+        SELECT DISTINCT guild_id FROM pots WHERE is_active = TRUE
+    """)
+    return [row[0] for row in cursor.fetchall()]
+
+
+def get_entry_by_id(conn: sqlite3.Connection, entry_id: int) -> PotEntry | None:
+    """Get a pot entry by ID"""
+    cursor = conn.execute(
+        """
+        SELECT pe.*, p.guild_id as pot_guild_id
+        FROM pot_entries pe
+        JOIN pots p ON pe.pot_id = p.pot_id
+        WHERE pe.entry_id = ?
+    """,
+        (entry_id,),
+    )
+    row = cursor.fetchone()
+    return PotEntry(**dict(row)) if row else None
