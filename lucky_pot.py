@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing_extensions import TypedDict
 
+from hikari.impl.special_endpoints import ContainerComponentBuilder
 import hikari
 import lightbulb
 import schedule
@@ -17,6 +18,88 @@ POT_ENTRY_COST = 5
 CHECK_INTERVAL_SECONDS = 30
 DAILY_DRAW_CHANCE = 0.6
 RANDOM_WIN_CHANCE = 0.05
+
+MESSAGES = {
+    "not_registered": "❌ You are not registered with StackCoin! Please run `/dole` first.",
+    "payment_request_failed": "❌ Failed to create payment request.",
+    "already_entered": "❌ You have already entered this pot! You can only enter once per pot.",
+    "no_active_pot": "🎲 No active pot! Use `/enter-pot` to start one.",
+    "pot_status_error": "❌ Error retrieving pot status. Please try again later.",
+    "debug_no_active_pot": "❌ No active pot to end!",
+    "debug_no_participants": "❌ Cannot end pot with no participants!",
+    "debug_no_confirmed_participants": "❌ No confirmed participants found!",
+}
+
+
+def announce_winner(
+    guild_id: str, winner_id: str, winning_amount: int, win_type: str = "DAILY DRAW"
+):
+    """Create winner announcement message"""
+    return (
+        f"🎉 **{win_type} WINNER!** 🎉\n\n"
+        f"<@{winner_id}> has won the pot of **{winning_amount} STK**!\n"
+        f"Congratulations! 🎊\n\n"
+        f"A new pot has started - use `/enter-pot` to join!"
+    )
+
+
+def announce_daily_draw_no_winner(guild_id: str, pot_amount: int):
+    """Create daily draw no winner announcement"""
+    return (
+        f"🎲 Daily draw occurred, but the pot continues! No winner this time.\n"
+        f"Current pot: **{pot_amount} STK**\n"
+        f"Use `/enter-pot` to increase your chances!"
+    )
+
+
+def create_pot_status_container(status):
+    """Create container component for pot status display"""
+
+    container = ContainerComponentBuilder(accent_color=hikari.Color(0x00FF00))
+    container.add_text_display("🎰 Lucky Pot Status")
+    container.add_text_display(f"💰 Total Pot: {status['total_amount']} STK")
+
+    container.add_text_display(f"👥 Participants: {status['participant_count']}")
+
+    if status.get("participants"):
+        participant_list = []
+        for p in status["participants"][:10]:
+            participant_list.append(f"<@{p['discord_id']}>")
+
+        if participant_list:
+            participant_text = "\n".join(participant_list)
+            container.add_text_display(f"🏆 Participants\n{participant_text}")
+
+    next_draw = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) + timedelta(days=1)
+
+    container.add_text_display(
+        f"⏰ Next Daily Draw: <t:{int(next_draw.timestamp())}:R>"
+    )
+
+    container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+
+    container.add_text_display(f"Pot ID: {status['pot_id']}")
+
+    return container
+
+
+def get_instant_win_message(username: str, pot_total: int):
+    """Get instant win message"""
+    return (
+        f"🎉 **INSTANT WIN!** {username}, you've won the entire pot of {pot_total} STK!"
+    )
+
+
+def get_entry_confirmation_message(username: str):
+    """Get entry confirmation message"""
+    return f"🎲 {username}, accept the {POT_ENTRY_COST} STK payment request from StackCoin via DMs, and you're in the pot!"
+
+
+def get_debug_success_message(winner_id: str, winning_amount: int):
+    """Get debug success message"""
+    return f"✅ Pot ended! Winner: <@{winner_id}> won {winning_amount} STK"
 
 
 class WinnerInfo(TypedDict):
@@ -96,12 +179,10 @@ async def process_stackcoin_requests():
             logger.info(f"Denied expired entry {entry['entry_id']}")
 
 
-def select_weighted_winner(participants: list[db.Participant]) -> str:
-    """Select a winner from participants weighted by number of entries"""
-    weighted_participants = []
-    for p in participants:
-        weighted_participants.extend([p["discord_id"]] * p["entries"])
-    return random.choice(weighted_participants)
+def select_random_winner(participants: list[db.Participant]) -> str:
+    """Select a random winner from participants"""
+    participant_ids = [p["discord_id"] for p in participants]
+    return random.choice(participant_ids)
 
 
 async def process_pot_win(
@@ -116,11 +197,7 @@ async def process_pot_win(
         db.win_pot(conn, guild_id, winner_id, winning_amount)
 
         await announce_to_guild(
-            guild_id,
-            f"🎉 **{win_type} WINNER!** 🎉\n\n"
-            f"<@{winner_id}> has won the pot of **{winning_amount} STK**!\n"
-            f"Congratulations! 🎊\n\n"
-            f"A new pot has started - use `/enter-pot` to join!",
+            guild_id, announce_winner(guild_id, winner_id, winning_amount, win_type)
         )
 
         logger.info(
@@ -146,7 +223,7 @@ async def end_pot_with_winner(
         if not participants:
             return None
 
-        winner_id = select_weighted_winner(participants)
+        winner_id = select_random_winner(participants)
         winning_amount = pot_status["total_amount"]
 
         if await process_pot_win(conn, guild_id, winner_id, winning_amount, win_type):
@@ -176,16 +253,14 @@ async def daily_pot_draw():
                 if not winner_info:
                     await announce_to_guild(
                         guild_id,
-                        f"🎲 Daily draw occurred, but the pot continues! No winner this time.\n"
-                        f"Current pot: **{pot_status['total_amount']} STK**\n"
-                        f"Use `/enter-pot` to increase your chances!",
+                        announce_daily_draw_no_winner(
+                            guild_id, pot_status["total_amount"]
+                        ),
                     )
             else:
                 await announce_to_guild(
                     guild_id,
-                    f"🎲 Daily draw occurred, but the pot continues! No winner this time.\n"
-                    f"Current pot: **{pot_status['total_amount']} STK**\n"
-                    f"Use `/enter-pot` to increase your chances!",
+                    announce_daily_draw_no_winner(guild_id, pot_status["total_amount"]),
                 )
 
 
@@ -242,9 +317,7 @@ class EnterPot(
             user = await stk.get_user_by_discord_id(discord_id)
 
             if not user:
-                await ctx.respond(
-                    "❌ You are not registered with StackCoin! Please run `/dole` first."
-                )
+                await ctx.respond(MESSAGES["not_registered"])
                 return
 
             if not isinstance(user.id, int):
@@ -255,7 +328,7 @@ class EnterPot(
             )
 
             if not request_id:
-                await ctx.respond("❌ Failed to create payment request.")
+                await ctx.respond(MESSAGES["payment_request_failed"])
                 return
 
             instant_win = random.random() < RANDOM_WIN_CHANCE
@@ -270,9 +343,7 @@ class EnterPot(
                     pot_id = current_pot["pot_id"]
 
                 if not db.can_user_enter_pot(conn, discord_id, guild_id, pot_id):
-                    await ctx.respond(
-                        "⏰ You can only enter the pot once every 6 hours!"
-                    )
+                    await ctx.respond(MESSAGES["already_entered"])
                     return
 
                 entry_id = db.create_pot_entry(
@@ -296,12 +367,10 @@ class EnterPot(
 
             if instant_win:
                 await ctx.respond(
-                    f"🎉 **INSTANT WIN!** {user.username}, you've won the entire pot of {pot_total} STK!"
+                    get_instant_win_message(user.username, pot_total or 0)
                 )
             else:
-                await ctx.respond(
-                    f"🎲 {user.username}, accept the {POT_ENTRY_COST} STK payment request from StackCoin via DMs, and you're in the pot!"
-                )
+                await ctx.respond(get_entry_confirmation_message(user.username))
 
         except Exception as e:
             logger.error(f"Error in EnterPot command for user {ctx.user.id}: {e}")
@@ -323,56 +392,15 @@ class PotStatus(
                 status = db.get_pot_status(conn, guild_id)
 
             if status is None:
-                await ctx.respond("🎲 No active pot! Use `/enter-pot` to start one.")
+                await ctx.respond(MESSAGES["no_active_pot"])
                 return
 
-            embed = hikari.Embed(
-                title="🎰 Lucky Pot Status",
-                color=0x00FF00,
-                timestamp=datetime.now(timezone.utc),
-            )
-
-            embed.add_field(
-                name="💰 Total Pot", value=f"{status['total_amount']} STK", inline=True
-            )
-
-            embed.add_field(
-                name="👥 Participants",
-                value=str(status["participant_count"]),
-                inline=True,
-            )
-
-            if status["participants"]:
-                participant_list = []
-                for p in status["participants"][:10]:
-                    participant_list.append(
-                        f"<@{p['discord_id']}>: {p['entry_count']} entries"
-                    )
-
-                embed.add_field(
-                    name="🏆 Top Participants",
-                    value="\n".join(participant_list)
-                    if participant_list
-                    else "None yet",
-                    inline=False,
-                )
-
-            next_draw = datetime.now(timezone.utc).replace(
-                hour=0, minute=0, second=0, microsecond=0
-            ) + timedelta(days=1)
-            embed.add_field(
-                name="⏰ Next Daily Draw",
-                value=f"<t:{int(next_draw.timestamp())}:R>",
-                inline=False,
-            )
-
-            embed.set_footer(text=f"Pot ID: {status['pot_id']}")
-
-            await ctx.respond(embed=embed)
+            container_builder = create_pot_status_container(status)
+            await ctx.respond(components=[container_builder])
 
         except Exception as e:
             logger.error(f"Error in PotStatus command for guild {ctx.guild_id}: {e}")
-            await ctx.respond("❌ Error retrieving pot status. Please try again later.")
+            await ctx.respond(MESSAGES["pot_status_error"])
 
 
 if config.DEBUG_MODE:
@@ -392,21 +420,23 @@ if config.DEBUG_MODE:
                     pot_status = db.get_pot_status(conn, guild_id)
 
                 if pot_status is None:
-                    await ctx.respond("❌ No active pot to end!")
+                    await ctx.respond(MESSAGES["debug_no_active_pot"])
                     return
 
                 if pot_status["participant_count"] == 0:
-                    await ctx.respond("❌ Cannot end pot with no participants!")
+                    await ctx.respond(MESSAGES["debug_no_participants"])
                     return
 
                 winner_info = await end_pot_with_winner(guild_id, "DEBUG FORCE END")
 
                 if winner_info:
                     await ctx.respond(
-                        f"✅ Pot ended! Winner: <@{winner_info['winner_id']}> won {winner_info['winning_amount']} STK"
+                        get_debug_success_message(
+                            winner_info["winner_id"], winner_info["winning_amount"]
+                        )
                     )
                 else:
-                    await ctx.respond("❌ No confirmed participants found!")
+                    await ctx.respond(MESSAGES["debug_no_confirmed_participants"])
 
             except Exception as e:
                 logger.error(

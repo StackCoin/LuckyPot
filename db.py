@@ -29,12 +29,10 @@ class PotEntry(TypedDict):
 
 class Participant(TypedDict):
     discord_id: str
-    entries: int
 
 
 class ParticipantWithAmount(TypedDict):
     discord_id: str
-    entry_count: int
     total_amount: int
 
 
@@ -113,7 +111,8 @@ def init_database():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 confirmed_at TIMESTAMP NULL,
                 FOREIGN KEY (pot_id) REFERENCES pots(pot_id),
-                FOREIGN KEY (discord_id, guild_id) REFERENCES users(discord_id, guild_id)
+                FOREIGN KEY (discord_id, guild_id) REFERENCES users(discord_id, guild_id),
+                UNIQUE(pot_id, discord_id)
             )
         """)
 
@@ -186,8 +185,7 @@ def can_user_enter_pot(
         """
         SELECT COUNT(*) FROM pot_entries
         WHERE discord_id = ? AND guild_id = ? AND pot_id = ?
-          AND created_at > datetime('now', '-6 hours')
-          AND status IN ('confirmed', 'unconfirmed')
+          AND status IN ('confirmed', 'unconfirmed', 'instant_win')
     """,
         (discord_id, guild_id, pot_id),
     )
@@ -233,11 +231,10 @@ def get_pot_status(conn: sqlite3.Connection, guild_id: str) -> PotStatus | None:
 
     cursor = conn.execute(
         """
-        SELECT discord_id, COUNT(*) as entry_count, SUM(amount) as total_amount
+        SELECT discord_id, amount as total_amount
         FROM pot_entries
         WHERE pot_id = ? AND status = 'confirmed'
-        GROUP BY discord_id
-        ORDER BY entry_count DESC, total_amount DESC
+        ORDER BY total_amount DESC
     """,
         (pot["pot_id"],),
     )
@@ -318,10 +315,9 @@ def get_active_pot_participants(
 
     cursor = conn.execute(
         """
-        SELECT discord_id, COUNT(*) as entries
+        SELECT discord_id
         FROM pot_entries
         WHERE pot_id = ? AND status = 'confirmed'
-        GROUP BY discord_id
     """,
         (pot["pot_id"],),
     )
