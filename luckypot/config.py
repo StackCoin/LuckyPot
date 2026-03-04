@@ -1,8 +1,5 @@
 """Configuration loading from environment variables."""
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 STACKCOIN_API_URL = os.getenv("STACKCOIN_API_URL", "http://localhost:4000")

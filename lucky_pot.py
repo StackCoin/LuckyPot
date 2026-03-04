@@ -8,6 +8,13 @@ Wires together three concurrent systems:
 """
 import asyncio
 from functools import partial
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from the same directory as this script, before any other imports
+# that depend on environment variables.
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import hikari
 from loguru import logger
