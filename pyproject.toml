@@ -1,13 +1,22 @@
 [project]
 name = "luckypot"
 version = "0.1.0"
-description = "LuckyPot is a bot that implments a lottery system ontop of StackCoin"
+description = "LuckyPot is a bot that implements a lottery system on top of StackCoin"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "hikari>=2.3.5",
     "hikari-lightbulb>=3.1.1",
+    "httpx>=0.27.0",
     "loguru>=0.7.3",
     "python-dotenv>=1.1.1",
     "schedule>=1.2.0",
+    "websockets>=13.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["luckypot"]
