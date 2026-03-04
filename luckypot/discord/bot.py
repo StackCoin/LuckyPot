@@ -1,43 +1,29 @@
-"""Hikari bot lifecycle, lightbulb client setup, and channel announcements."""
 import hikari
 import lightbulb
 from loguru import logger
 
-from luckypot import config, stk
+from luckypot import stk
+from luckypot.config import settings
 
 
 def create_bot() -> hikari.GatewayBot:
-    """Create and return a configured hikari GatewayBot."""
-    if not config.DISCORD_TOKEN:
-        raise ValueError("DISCORD_TOKEN is not set")
-    return hikari.GatewayBot(token=config.DISCORD_TOKEN)
+    if not settings.discord_token:
+        raise ValueError("LUCKYPOT_DISCORD_TOKEN is not set")
+    return hikari.GatewayBot(token=settings.discord_token)
 
 
 def create_lightbulb_client(bot: hikari.GatewayBot) -> lightbulb.Client:
-    """Create a lightbulb client from the bot."""
     return lightbulb.client_from_app(bot)
 
 
 def get_guild_ids() -> list[int]:
-    """Get the guild IDs to register slash commands to.
-
-    If TESTING_GUILD_ID is set, commands are guild-scoped (instant registration).
-    Otherwise, commands are global (may take up to an hour to propagate).
-    """
-    if config.TESTING_GUILD_ID:
-        return [int(config.TESTING_GUILD_ID)]
+    """Get the guild IDs to register slash commands to."""
+    if settings.testing_guild_id:
+        return [int(settings.testing_guild_id)]
     return []
 
 
 def make_announce_fn(bot: hikari.GatewayBot):
-    """Create an announce function that posts to a guild's designated channel.
-
-    Returns an async function with signature:
-        async def announce(guild_id: str, message: str) -> None
-
-    Note: game.py's AnnounceFn expects (message: str) -> None, so the caller
-    must partial-apply the guild_id. See commands.py for usage.
-    """
     async def announce(guild_id: str, message: str) -> None:
         try:
             channel_snowflake = await stk.get_guild_channel(guild_id)

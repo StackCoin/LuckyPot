@@ -1,18 +1,17 @@
-"""Slash commands for the LuckyPot Discord bot."""
 from functools import partial
 
 import hikari
 import lightbulb
 from loguru import logger
 
-from luckypot import config, db
+from luckypot import db
+from luckypot.config import settings
 from luckypot.game import enter_pot, end_pot_with_winner, POT_ENTRY_COST
 from luckypot.discord import ui
 from luckypot.discord.bot import get_guild_ids, make_announce_fn
 
 
 def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
-    """Register all slash commands on the lightbulb client."""
     guilds = get_guild_ids()
     announce = make_announce_fn(bot)
 
@@ -106,7 +105,7 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                 container = ui.build_entry_error("Error retrieving pot history.")
                 await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
 
-    if config.DEBUG_MODE:
+    if settings.debug_mode:
         @client.register(guilds=guilds)
         class ForceEndPot(
             lightbulb.SlashCommand,

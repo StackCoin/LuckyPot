@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import hikari
 from hikari.impl.special_endpoints import ContainerComponentBuilder
 
-from luckypot import config
+from luckypot.config import settings
 
 
 def build_entry_pending(request_id: int, amount: int) -> ContainerComponentBuilder:
@@ -64,8 +64,8 @@ def build_pot_status(status: dict) -> ContainerComponentBuilder:
 
     now = datetime.now(timezone.utc)
     next_draw = now.replace(
-        hour=config.DAILY_DRAW_HOUR,
-        minute=config.DAILY_DRAW_MINUTE,
+        hour=settings.daily_draw_hour,
+        minute=settings.daily_draw_minute,
         second=0,
         microsecond=0,
     )
