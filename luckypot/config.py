@@ -1,16 +1,33 @@
-"""Configuration loading from environment variables."""
-import os
+"""Configuration via pydantic-settings.
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
-STACKCOIN_API_URL = os.getenv("STACKCOIN_API_URL", "http://localhost:4000")
-STACKCOIN_API_TOKEN = os.getenv("STACKCOIN_API_TOKEN", "")
-STACKCOIN_WS_URL = os.getenv("STACKCOIN_WS_URL", "ws://localhost:4000/socket/websocket")
-DB_PATH = os.getenv("LUCKYPOT_DB_PATH", "luckypot.db")
+All environment variables are prefixed with ``LUCKYPOT_``.
+Example: the ``discord_token`` field reads from ``LUCKYPOT_DISCORD_TOKEN``.
+"""
 
-# Discord bot settings
-TESTING_GUILD_ID = os.getenv("TESTING_GUILD_ID", "")
-DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Daily draw schedule (UTC)
-DAILY_DRAW_HOUR = int(os.getenv("DAILY_DRAW_HOUR", "0"))
-DAILY_DRAW_MINUTE = int(os.getenv("DAILY_DRAW_MINUTE", "0"))
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="LUCKYPOT_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
+
+    discord_token: str = ""
+    stackcoin_api_url: str = "http://localhost:4000"
+    stackcoin_api_token: str = ""
+    stackcoin_ws_url: str = "ws://localhost:4000/socket/websocket"
+    db_path: str = "luckypot.db"
+
+    # Discord bot settings
+    testing_guild_id: str = ""
+    debug_mode: bool = False
+
+    # Daily draw schedule (UTC)
+    daily_draw_hour: int = 0
+    daily_draw_minute: int = 0
+
+
+settings = Settings()

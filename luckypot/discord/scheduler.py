@@ -1,10 +1,9 @@
-"""Asyncio-based daily draw scheduler."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
 from loguru import logger
 
-from luckypot import config
+from luckypot.config import settings
 from luckypot.game import daily_pot_draw, AnnounceFn
 
 
@@ -18,8 +17,8 @@ async def run_daily_draw_loop(announce_fn: AnnounceFn = None):
     while True:
         now = datetime.now(timezone.utc)
         next_draw = now.replace(
-            hour=config.DAILY_DRAW_HOUR,
-            minute=config.DAILY_DRAW_MINUTE,
+            hour=settings.daily_draw_hour,
+            minute=settings.daily_draw_minute,
             second=0,
             microsecond=0,
         )

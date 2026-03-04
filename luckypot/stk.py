@@ -1,14 +1,14 @@
 """StackCoin API wrapper for LuckyPot bot."""
 import httpx
 from loguru import logger
-from luckypot import config
+from luckypot.config import settings
 
 
 def _client() -> httpx.AsyncClient:
     """Create an authenticated HTTP client for the StackCoin API."""
     return httpx.AsyncClient(
-        base_url=config.STACKCOIN_API_URL,
-        headers={"Authorization": f"Bearer {config.STACKCOIN_API_TOKEN}"},
+        base_url=settings.stackcoin_api_url,
+        headers={"Authorization": f"Bearer {settings.stackcoin_api_token}"},
         timeout=10.0,
     )
 
