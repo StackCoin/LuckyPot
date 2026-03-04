@@ -105,3 +105,14 @@ async def get_request(request_id: int) -> dict | None:
             logger.error(f"Failed to get request {request_id}: {resp.status_code}")
             return None
         return resp.json()
+
+
+async def get_guild_channel(guild_id: str) -> str | None:
+    """Get the designated channel snowflake for a guild."""
+    async with _client() as client:
+        resp = await client.get(f"/api/discord/guild/{guild_id}")
+        if resp.status_code != 200:
+            logger.debug(f"No guild info for {guild_id}: {resp.status_code}")
+            return None
+        data = resp.json()
+        return data.get("designated_channel_snowflake")
