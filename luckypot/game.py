@@ -5,6 +5,7 @@ from typing import Any, Callable, Awaitable
 
 from loguru import logger
 from luckypot import db, stk
+from stackcoin import RequestAcceptedData, RequestDeniedData
 
 POT_ENTRY_COST = 5
 DAILY_DRAW_CHANCE = 0.6
@@ -315,7 +316,7 @@ async def daily_pot_draw(
             )
 
 
-async def on_request_accepted(event: dict, announce: RawAnnounceFn = None):
+async def on_request_accepted(event_data: RequestAcceptedData, announce: RawAnnounceFn = None):
     """Handle a payment request being accepted.
 
     When a user accepts the pot entry payment, we confirm their entry.
@@ -324,7 +325,7 @@ async def on_request_accepted(event: dict, announce: RawAnnounceFn = None):
     ``announce`` is the raw announce function that takes ``(guild_id, message)``
     — the guild is looked up from the DB entry, not from the event payload.
     """
-    request_id = str(event.get("request_id", ""))
+    request_id = str(event_data.request_id)
     if not request_id:
         logger.warning("on_request_accepted called without request_id")
         return
@@ -390,12 +391,12 @@ async def on_request_accepted(event: dict, announce: RawAnnounceFn = None):
         conn.close()
 
 
-async def on_request_denied(event: dict, announce: RawAnnounceFn = None):
+async def on_request_denied(event_data: RequestDeniedData, announce: RawAnnounceFn = None):
     """Handle a payment request being denied.
 
     ``announce`` is the raw announce function that takes ``(guild_id, message)``.
     """
-    request_id = str(event.get("request_id", ""))
+    request_id = str(event_data.request_id)
     if not request_id:
         logger.warning("on_request_denied called without request_id")
         return
