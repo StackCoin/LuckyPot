@@ -7,10 +7,9 @@ requires-python = ">=3.13"
 dependencies = [
     "hikari>=2.3.5",
     "hikari-lightbulb>=3.1.1",
-    "httpx>=0.27.0",
     "loguru>=0.7.3",
     "pydantic-settings>=2.0",
-    "websockets>=13.0",
+    "stackcoin>=0.1.0",
 ]
 
 [build-system]
