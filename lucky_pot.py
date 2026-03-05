@@ -57,10 +57,10 @@ async def on_started(_event: hikari.StartedEvent) -> None:
         on_event_id=persist_event_id,
     )
 
-    async def handle_accepted(event: stackcoin.Event):
+    async def handle_accepted(event: stackcoin.RequestAcceptedEvent):
         await on_request_accepted(event.data, announce=announce)
 
-    async def handle_denied(event: stackcoin.Event):
+    async def handle_denied(event: stackcoin.RequestDeniedEvent):
         await on_request_denied(event.data, announce=announce)
 
     gateway.register_handler("request.accepted", handle_accepted)
