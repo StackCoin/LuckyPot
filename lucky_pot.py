@@ -4,7 +4,7 @@ from loguru import logger
 
 from luckypot import db
 from luckypot.config import settings
-from luckypot.gateway import StackCoinGateway
+import stackcoin
 from luckypot.game import on_request_accepted, on_request_denied
 from luckypot.discord.bot import (
     create_bot,
@@ -50,18 +50,18 @@ async def on_started(_event: hikari.StartedEvent) -> None:
         finally:
             c.close()
 
-    gateway = StackCoinGateway(
-        settings.stackcoin_ws_url,
-        settings.stackcoin_api_token,
+    gateway = stackcoin.Gateway(
+        ws_url=settings.stackcoin_ws_url,
+        token=settings.stackcoin_api_token,
         last_event_id=last_event_id,
         on_event_id=persist_event_id,
     )
 
-    async def handle_accepted(payload):
-        await on_request_accepted(payload.get("data", {}), announce=announce)
+    async def handle_accepted(event: stackcoin.Event):
+        await on_request_accepted(event.data, announce=announce)
 
-    async def handle_denied(payload):
-        await on_request_denied(payload.get("data", {}), announce=announce)
+    async def handle_denied(event: stackcoin.Event):
+        await on_request_denied(event.data, announce=announce)
 
     gateway.register_handler("request.accepted", handle_accepted)
     gateway.register_handler("request.denied", handle_denied)
