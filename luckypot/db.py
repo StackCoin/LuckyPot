@@ -1,11 +1,9 @@
-"""Database layer for LuckyPot using SQLite."""
 import sqlite3
 from loguru import logger
 from luckypot.config import settings
 
 
 def get_connection() -> sqlite3.Connection:
-    """Get a SQLite connection with row_factory set to sqlite3.Row."""
     conn = sqlite3.connect(settings.db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -14,7 +12,6 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_database():
-    """Initialize the database schema."""
     conn = get_connection()
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS pots (
@@ -39,6 +36,11 @@ def init_database():
             FOREIGN KEY (pot_id) REFERENCES pots(pot_id)
         );
 
+        CREATE TABLE IF NOT EXISTS gateway_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_pots_guild_active
             ON pots(guild_id, is_active);
         CREATE INDEX IF NOT EXISTS idx_pot_entries_pot_id
@@ -50,10 +52,6 @@ def init_database():
     conn.close()
     logger.info("Database initialized")
 
-
-# ---------------------------------------------------------------------------
-# Pot operations
-# ---------------------------------------------------------------------------
 
 def get_active_pot(conn, guild_id: str) -> dict | None:
     """Get the active pot for a guild, or None if there isn't one."""
@@ -83,7 +81,9 @@ def ensure_active_pot(conn, guild_id: str) -> dict:
     return pot
 
 
-def end_pot(conn, pot_id: int, winner_discord_id: str | None, winning_amount: int, win_type: str):
+def end_pot(
+    conn, pot_id: int, winner_discord_id: str | None, winning_amount: int, win_type: str
+):
     """Mark a pot as ended with a winner."""
     conn.execute(
         """UPDATE pots
@@ -98,11 +98,14 @@ def end_pot(conn, pot_id: int, winner_discord_id: str | None, winning_amount: in
     conn.commit()
 
 
-# ---------------------------------------------------------------------------
-# Entry operations
-# ---------------------------------------------------------------------------
-
-def add_entry(conn, pot_id: int, discord_id: str, amount: int, stackcoin_request_id: str | None = None, status: str = "pending") -> int:
+def add_entry(
+    conn,
+    pot_id: int,
+    discord_id: str,
+    amount: int,
+    stackcoin_request_id: str | None = None,
+    status: str = "pending",
+) -> int:
     """Add an entry to a pot. Returns the entry_id."""
     cursor = conn.execute(
         """INSERT INTO pot_entries (pot_id, discord_id, amount, status, stackcoin_request_id)
@@ -179,11 +182,7 @@ def get_pot_participants(conn, pot_id: int) -> list[dict]:
 
 
 def get_pot_status(conn, guild_id: str) -> dict:
-    """Get the current pot status for a guild.
-
-    Returns a dict with pot info and participant count.
-    Counts both 'confirmed' and 'instant_win' entries as active participants.
-    """
+    """Get the current pot status for a guild."""
     pot = get_active_pot(conn, guild_id)
     if pot is None:
         return {"active": False, "participants": 0, "total_amount": 0}
@@ -224,15 +223,9 @@ def has_pending_instant_wins(conn, guild_id: str) -> bool:
     return cursor.fetchone()["count"] > 0
 
 
-# ---------------------------------------------------------------------------
-# Guild operations
-# ---------------------------------------------------------------------------
-
 def get_all_active_guilds(conn) -> list[str]:
     """Get all guild_ids that have an active pot."""
-    cursor = conn.execute(
-        "SELECT DISTINCT guild_id FROM pots WHERE is_active = TRUE"
-    )
+    cursor = conn.execute("SELECT DISTINCT guild_id FROM pots WHERE is_active = TRUE")
     return [row["guild_id"] for row in cursor.fetchall()]
 
 
@@ -245,3 +238,20 @@ def get_pot_history(conn, guild_id: str, limit: int = 10) -> list[dict]:
         (guild_id, limit),
     )
     return [dict(row) for row in cursor.fetchall()]
+
+
+def get_last_event_id(conn) -> int:
+    """Get the last processed gateway event ID, or 0 if none."""
+    cursor = conn.execute("SELECT value FROM gateway_state WHERE key = 'last_event_id'")
+    row = cursor.fetchone()
+    return int(row["value"]) if row else 0
+
+
+def set_last_event_id(conn, event_id: int) -> None:
+    """Persist the last processed gateway event ID."""
+    conn.execute(
+        "INSERT INTO gateway_state (key, value) VALUES ('last_event_id', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (str(event_id),),
+    )
+    conn.commit()

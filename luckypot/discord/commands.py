@@ -8,12 +8,13 @@ from luckypot import db
 from luckypot.config import settings
 from luckypot.game import enter_pot, end_pot_with_winner, POT_ENTRY_COST
 from luckypot.discord import ui
-from luckypot.discord.bot import get_guild_ids, make_announce_fn
+from luckypot.discord.bot import get_guild_ids, make_announce_fn, make_edit_announce_fn
 
 
 def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
     guilds = get_guild_ids()
     announce = make_announce_fn(bot)
+    edit_announce = make_edit_announce_fn(bot)
 
     @client.register(guilds=guilds)
     class EnterPot(
@@ -28,7 +29,9 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
 
             try:
                 guild_announce = partial(announce, guild_id)
-                result = await enter_pot(discord_id, guild_id, announce_fn=guild_announce)
+                result = await enter_pot(
+                    discord_id, guild_id, announce_fn=guild_announce
+                )
                 status = result.get("status", "error")
 
                 if status == "pending":
@@ -36,22 +39,32 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                         request_id=result.get("request_id", 0),
                         amount=POT_ENTRY_COST,
                     )
-                    await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                    await ctx.respond(
+                        components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                    )
                 elif status == "instant_win":
                     container = ui.build_entry_instant_win()
-                    await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                    await ctx.respond(
+                        components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                    )
                 elif status == "already_entered":
                     container = ui.build_entry_already_entered()
-                    await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                    await ctx.respond(
+                        components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                    )
                 else:
                     message = result.get("message", "Something went wrong.")
                     container = ui.build_entry_error(message)
-                    await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                    await ctx.respond(
+                        components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                    )
 
             except Exception as e:
                 logger.error(f"Error in /enter-pot for user {ctx.user.id}: {e}")
                 container = ui.build_entry_error(f"An unexpected error occurred: {e}")
-                await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                await ctx.respond(
+                    components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                )
 
     @client.register(guilds=guilds)
     class PotStatus(
@@ -75,8 +88,12 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
 
             except Exception as e:
                 logger.error(f"Error in /pot-status for guild {ctx.guild_id}: {e}")
-                container = ui.build_entry_error("Error retrieving pot status. Please try again later.")
-                await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                container = ui.build_entry_error(
+                    "Error retrieving pot status. Please try again later."
+                )
+                await ctx.respond(
+                    components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                )
 
     @client.register(guilds=guilds)
     class PotHistory(
@@ -84,7 +101,13 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
         name="pot-history",
         description="View recent pot winners",
     ):
-        limit: int = lightbulb.integer("limit", "Number of recent pots to show", default=5, min_value=1, max_value=20)
+        limit: int = lightbulb.integer(
+            "limit",
+            "Number of recent pots to show",
+            default=5,
+            min_value=1,
+            max_value=20,
+        )
 
         @lightbulb.invoke
         async def invoke(self, ctx: lightbulb.Context) -> None:
@@ -103,9 +126,12 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
             except Exception as e:
                 logger.error(f"Error in /pot-history for guild {ctx.guild_id}: {e}")
                 container = ui.build_entry_error("Error retrieving pot history.")
-                await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                await ctx.respond(
+                    components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                )
 
     if settings.debug_mode:
+
         @client.register(guilds=guilds)
         class ForceEndPot(
             lightbulb.SlashCommand,
@@ -125,24 +151,47 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
 
                     if not status.get("active"):
                         container = ui.build_entry_error("No active pot to end!")
-                        await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                        await ctx.respond(
+                            components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                        )
                         return
 
                     if status["participants"] == 0:
-                        container = ui.build_entry_error("Cannot end pot with no confirmed participants!")
-                        await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                        container = ui.build_entry_error(
+                            "Cannot end pot with no confirmed participants!"
+                        )
+                        await ctx.respond(
+                            components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                        )
                         return
 
                     guild_announce = partial(announce, guild_id)
-                    won = await end_pot_with_winner(guild_id, win_type="DEBUG FORCE END", announce_fn=guild_announce)
+                    guild_edit = partial(edit_announce, guild_id)
+                    won = await end_pot_with_winner(
+                        guild_id,
+                        win_type="DEBUG FORCE END",
+                        announce_fn=guild_announce,
+                        edit_announce_fn=guild_edit,
+                    )
 
                     if won:
-                        await ctx.respond("✅ Pot ended! Check the channel for the winner announcement.", flags=hikari.MessageFlag.EPHEMERAL)
+                        await ctx.respond(
+                            "✅ Pot ended! Check the channel for the winner announcement.",
+                            flags=hikari.MessageFlag.EPHEMERAL,
+                        )
                     else:
-                        container = ui.build_entry_error("No confirmed participants found!")
-                        await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                        container = ui.build_entry_error(
+                            "No confirmed participants found!"
+                        )
+                        await ctx.respond(
+                            components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                        )
 
                 except Exception as e:
-                    logger.error(f"Error in /force-end-pot for guild {ctx.guild_id}: {e}")
+                    logger.error(
+                        f"Error in /force-end-pot for guild {ctx.guild_id}: {e}"
+                    )
                     container = ui.build_entry_error(f"Error ending pot: {e}")
-                    await ctx.respond(components=[container], flags=hikari.MessageFlag.EPHEMERAL)
+                    await ctx.respond(
+                        components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                    )
