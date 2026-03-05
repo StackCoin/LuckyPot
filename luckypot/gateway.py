@@ -1,9 +1,3 @@
-"""
-StackCoin WebSocket Gateway client.
-
-Connects to the StackCoin Phoenix Channel WebSocket and receives
-real-time events. Handles reconnection and event replay.
-"""
 import asyncio
 import json
 from typing import Callable, Awaitable
@@ -15,41 +9,44 @@ EventHandler = Callable[[dict], Awaitable[None]]
 
 
 class StackCoinGateway:
-    def __init__(self, base_url: str, token: str):
-        self._base_url = base_url.rstrip("/")
+    def __init__(
+        self,
+        ws_url: str,
+        token: str,
+        last_event_id: int = 0,
+        on_event_id: Callable[[int], None] | None = None,
+    ):
+        self._ws_url = ws_url.rstrip("/")
         self._token = token
         self._handlers: dict[str, list[EventHandler]] = {}
-        self._last_event_id = 0
+        self._last_event_id = last_event_id
+        self._on_event_id = on_event_id
         self._ws = None
         self._running = False
         self._ref_counter = 0
 
     def on(self, event_type: str):
-        """Decorator to register an event handler."""
         def decorator(func: EventHandler):
             if event_type not in self._handlers:
                 self._handlers[event_type] = []
             self._handlers[event_type].append(func)
             return func
+
         return decorator
 
     def register_handler(self, event_type: str, handler: EventHandler):
-        """Register an event handler programmatically."""
         if event_type not in self._handlers:
             self._handlers[event_type] = []
         self._handlers[event_type].append(handler)
 
     async def connect(self):
-        """Connect and start listening for events. Reconnects on failure."""
         import websockets
 
         self._running = True
 
         while self._running:
             try:
-                # Build WebSocket URL from HTTP base URL
-                ws_base = self._base_url.replace("http://", "ws://").replace("https://", "wss://")
-                url = f"{ws_base}/bot/websocket?token={self._token}&vsn=2.0.0"
+                url = f"{self._ws_url}?token={self._token}&vsn=2.0.0"
 
                 async with websockets.connect(url) as ws:
                     self._ws = ws
@@ -74,16 +71,22 @@ class StackCoinGateway:
     async def _join_channel(self, ws):
         """Join the user:self channel with event replay."""
         self._ref_counter += 1
-        join_msg = json.dumps([
-            None, str(self._ref_counter),
-            "user:self", "phx_join",
-            {"last_event_id": self._last_event_id},
-        ])
+        join_msg = json.dumps(
+            [
+                None,
+                str(self._ref_counter),
+                "user:self",
+                "phx_join",
+                {"last_event_id": self._last_event_id},
+            ]
+        )
         await ws.send(join_msg)
 
         reply = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
         if reply[3] == "phx_reply" and reply[4].get("status") == "ok":
-            logger.info(f"Joined user channel (replaying from event {self._last_event_id})")
+            logger.info(
+                f"Joined user channel (replaying from event {self._last_event_id})"
+            )
         else:
             raise Exception(f"Failed to join channel: {reply}")
 
@@ -115,6 +118,12 @@ class StackCoinGateway:
                     await handler(payload)
                 except Exception as e:
                     logger.error(f"Error in handler for {event_type}: {e}")
+
+            if event_id > 0 and self._on_event_id:
+                try:
+                    self._on_event_id(event_id)
+                except Exception as e:
+                    logger.error(f"Failed to persist event ID {event_id}: {e}")
 
     def stop(self):
         """Signal the gateway to stop reconnecting and disconnect."""

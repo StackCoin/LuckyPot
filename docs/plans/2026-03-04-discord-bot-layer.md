@@ -60,7 +60,7 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 STACKCOIN_API_URL = os.getenv("STACKCOIN_API_URL", "http://localhost:4000")
 STACKCOIN_API_TOKEN = os.getenv("STACKCOIN_API_TOKEN", "")
-STACKCOIN_WS_URL = os.getenv("STACKCOIN_WS_URL", "ws://localhost:4000/socket/websocket")
+STACKCOIN_WS_URL = os.getenv("STACKCOIN_WS_URL", "ws://localhost:4000/ws")
 DB_PATH = os.getenv("LUCKYPOT_DB_PATH", "luckypot.db")
 
 # Discord bot settings
@@ -78,7 +78,7 @@ DAILY_DRAW_MINUTE = int(os.getenv("DAILY_DRAW_MINUTE", "0"))
 DISCORD_TOKEN=
 STACKCOIN_API_URL=http://localhost:4000
 STACKCOIN_API_TOKEN=
-STACKCOIN_WS_URL=ws://localhost:4000/socket/websocket
+STACKCOIN_WS_URL=ws://localhost:4000/ws
 LUCKYPOT_DB_PATH=luckypot.db
 TESTING_GUILD_ID=
 DEBUG_MODE=false
@@ -745,7 +745,7 @@ python lucky_pot.py
 | `DISCORD_TOKEN` | Yes | | Discord bot token |
 | `STACKCOIN_API_URL` | Yes | `http://localhost:4000` | StackCoin API base URL |
 | `STACKCOIN_API_TOKEN` | Yes | | Bot API token from StackCoin |
-| `STACKCOIN_WS_URL` | No | `ws://localhost:4000/socket/websocket` | StackCoin WebSocket URL |
+| `STACKCOIN_WS_URL` | No | `ws://localhost:4000/ws` | StackCoin WebSocket URL |
 | `LUCKYPOT_DB_PATH` | No | `luckypot.db` | SQLite database path |
 | `TESTING_GUILD_ID` | No | | Restrict slash commands to one guild |
 | `DEBUG_MODE` | No | `false` | Enable `/force-end-pot` command |

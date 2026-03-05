@@ -1,4 +1,3 @@
-"""StackCoin API wrapper for LuckyPot bot."""
 import httpx
 from loguru import logger
 from luckypot.config import settings
@@ -44,17 +43,6 @@ async def get_bot_balance() -> int | None:
 
 
 async def send_stk(to_user_id: int, amount: int, label: str | None = None, idempotency_key: str | None = None) -> dict | None:
-    """Send STK from the bot to a user.
-
-    Args:
-        to_user_id: The StackCoin user ID of the recipient.
-        amount: Amount of STK to send.
-        label: Optional transaction label.
-        idempotency_key: Optional idempotency key to prevent duplicate sends.
-
-    Returns:
-        Response dict on success, None on failure.
-    """
     async with _client() as client:
         payload: dict = {"amount": amount}
         if label:
@@ -70,19 +58,6 @@ async def send_stk(to_user_id: int, amount: int, label: str | None = None, idemp
 
 
 async def create_request(to_user_id: int, amount: int, label: str | None = None, idempotency_key: str | None = None) -> dict | None:
-    """Create a STK request (ask a user to pay the bot).
-
-    The bot is the requester; to_user_id is the responder who must accept/deny.
-
-    Args:
-        to_user_id: The StackCoin user ID to request payment from.
-        amount: Amount of STK to request.
-        label: Optional request label.
-        idempotency_key: Optional idempotency key to prevent duplicate requests.
-
-    Returns:
-        Response dict on success, None on failure.
-    """
     async with _client() as client:
         payload: dict = {"amount": amount}
         if label:
@@ -98,7 +73,6 @@ async def create_request(to_user_id: int, amount: int, label: str | None = None,
 
 
 async def get_request(request_id: int) -> dict | None:
-    """Get details of a specific request."""
     async with _client() as client:
         resp = await client.get(f"/api/request/{request_id}")
         if resp.status_code != 200:
@@ -108,7 +82,6 @@ async def get_request(request_id: int) -> dict | None:
 
 
 async def get_guild_channel(guild_id: str) -> str | None:
-    """Get the designated channel snowflake for a guild."""
     async with _client() as client:
         resp = await client.get(f"/api/discord/guild/{guild_id}")
         if resp.status_code != 200:

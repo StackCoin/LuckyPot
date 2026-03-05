@@ -26,7 +26,7 @@ All environment variables are prefixed with `LUCKYPOT_`.
 | `LUCKYPOT_DISCORD_TOKEN`    | Yes      |                                        | Discord bot token                    |
 | `LUCKYPOT_STACKCOIN_API_URL`| Yes      | `http://localhost:4000`                | StackCoin API base URL               |
 | `LUCKYPOT_STACKCOIN_API_TOKEN`| Yes    |                                        | Bot API token from StackCoin         |
-| `LUCKYPOT_STACKCOIN_WS_URL` | No      | `ws://localhost:4000/socket/websocket` | StackCoin WebSocket URL              |
+| `LUCKYPOT_STACKCOIN_WS_URL` | No      | `ws://localhost:4000/ws`               | StackCoin WebSocket URL              |
 | `LUCKYPOT_DB_PATH`          | No       | `luckypot.db`                          | SQLite database path                 |
 | `LUCKYPOT_TESTING_GUILD_ID` | No       |                                        | Restrict slash commands to one guild |
 | `LUCKYPOT_DEBUG_MODE`       | No       | `false`                                | Enable `/force-end-pot` command      |
