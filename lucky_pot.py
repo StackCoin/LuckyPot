@@ -6,7 +6,7 @@ from luckypot import db
 from luckypot.config import settings
 import stackcoin
 from luckypot.game import on_request_accepted, on_request_denied
-from luckypot.stk import get_client
+from luckypot.stk import get_client as get_stk_client
 from luckypot.discord.bot import (
     create_bot,
     create_lightbulb_client,
@@ -51,60 +51,24 @@ async def on_started(_event: hikari.StartedEvent) -> None:
         finally:
             c.close()
 
+    gateway = stackcoin.Gateway(
+        ws_url=settings.stackcoin_ws_url,
+        token=settings.stackcoin_api_token,
+        client=get_stk_client(),
+        last_event_id=last_event_id,
+        on_event_id=persist_event_id,
+    )
+
     async def handle_accepted(event: stackcoin.RequestAcceptedEvent):
         await on_request_accepted(event.data, announce=announce)
 
     async def handle_denied(event: stackcoin.RequestDeniedEvent):
         await on_request_denied(event.data, announce=announce)
 
-    async def catch_up_via_rest(since_id: int) -> int:
-        """Paginate through missed events via REST, process relevant ones.
+    gateway.register_handler("request.accepted", handle_accepted)
+    gateway.register_handler("request.denied", handle_denied)
 
-        Returns the last event ID seen (for use as the new gateway cursor).
-        """
-        logger.info(f"Catching up on missed events via REST (since_id={since_id})")
-        client = get_client()
-        events = await client.get_events(since_id=since_id)
-        cursor = since_id
-        for event in events:
-            if isinstance(event, stackcoin.RequestAcceptedEvent):
-                await handle_accepted(event)
-            elif isinstance(event, stackcoin.RequestDeniedEvent):
-                await handle_denied(event)
-            if event.id > cursor:
-                cursor = event.id
-        persist_event_id(cursor)
-        logger.info(f"Caught up on {len(events)} events, cursor now at {cursor}")
-        return cursor
-
-    async def run_gateway():
-        """Connect to the gateway, catching up via REST if too far behind."""
-        cursor = last_event_id
-
-        while True:
-            gateway = stackcoin.Gateway(
-                ws_url=settings.stackcoin_ws_url,
-                token=settings.stackcoin_api_token,
-                last_event_id=cursor,
-                on_event_id=persist_event_id,
-            )
-            gateway.register_handler("request.accepted", handle_accepted)
-            gateway.register_handler("request.denied", handle_denied)
-
-            try:
-                await gateway.connect()
-            except stackcoin.TooManyMissedEventsError as e:
-                logger.warning(
-                    f"Gateway rejected join: {e.missed_count} missed events "
-                    f"(limit {e.replay_limit}). Catching up via REST..."
-                )
-                cursor = await catch_up_via_rest(cursor)
-                # Loop back to reconnect with updated cursor
-            except Exception:
-                logger.exception("Gateway connection failed, retrying in 5s...")
-                await asyncio.sleep(5)
-
-    gateway_task = asyncio.create_task(run_gateway())
+    gateway_task = asyncio.create_task(gateway.connect())
     background_tasks.append(gateway_task)
     logger.info("StackCoin gateway started")
 
