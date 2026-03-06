@@ -59,14 +59,13 @@ async def on_started(_event: hikari.StartedEvent) -> None:
         on_event_id=persist_event_id,
     )
 
+    @gateway.on("request.accepted")
     async def handle_accepted(event: stackcoin.RequestAcceptedEvent):
         await on_request_accepted(event.data, announce=announce)
 
+    @gateway.on("request.denied")
     async def handle_denied(event: stackcoin.RequestDeniedEvent):
         await on_request_denied(event.data, announce=announce)
-
-    gateway.register_handler("request.accepted", handle_accepted)
-    gateway.register_handler("request.denied", handle_denied)
 
     gateway_task = asyncio.create_task(gateway.connect())
     background_tasks.append(gateway_task)

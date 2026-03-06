@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-stackcoin = { path = "../stackcoin-python/stackcoin", editable = true }
+stackcoin = { path = "../stackcoin-python", editable = true }
 
 [build-system]
 requires = ["hatchling"]
