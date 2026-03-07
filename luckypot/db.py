@@ -209,13 +209,21 @@ def get_all_active_guilds(conn) -> list[str]:
     return [row["guild_id"] for row in cursor.fetchall()]
 
 
-def get_pot_history(conn, guild_id: str, limit: int = 10) -> list[dict]:
-    """Get recent pot history for a guild."""
+PAGE_SIZE = 5
+
+
+def get_pot_history(conn, guild_id: str, page: int = 1) -> list[dict]:
+    """Get paginated pot history for a guild.
+
+    Returns up to PAGE_SIZE completed pots, ordered most-recent first.
+    ``page`` is 1-indexed.
+    """
+    offset = (page - 1) * PAGE_SIZE
     cursor = conn.execute(
         """SELECT * FROM pots
            WHERE guild_id = ? AND is_active = FALSE
-           ORDER BY ended_at DESC LIMIT ?""",
-        (guild_id, limit),
+           ORDER BY ended_at DESC LIMIT ? OFFSET ?""",
+        (guild_id, PAGE_SIZE, offset),
     )
     return [dict(row) for row in cursor.fetchall()]
 

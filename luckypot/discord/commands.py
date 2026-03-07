@@ -104,12 +104,11 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
         name="pot-history",
         description="View recent pot winners",
     ):
-        limit: int = lightbulb.integer(
-            "limit",
-            "Number of recent pots to show",
-            default=5,
+        page: int = lightbulb.integer(
+            "page",
+            "Page number",
+            default=1,
             min_value=1,
-            max_value=20,
         )
 
         @lightbulb.invoke
@@ -119,11 +118,11 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
             try:
                 conn = db.get_connection()
                 try:
-                    history = db.get_pot_history(conn, guild_id, limit=self.limit)
+                    history = db.get_pot_history(conn, guild_id, page=self.page)
                 finally:
                     conn.close()
 
-                container = ui.build_pot_history(history)
+                container = ui.build_pot_history(history, page=self.page)
                 await ctx.respond(components=[container])
 
             except Exception as e:
@@ -192,6 +191,9 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                 },
             ]
             container = ui.build_pot_history(sample_history)
+            await ctx.respond(components=[container])
+
+            container = ui.build_pot_history(sample_history, page=3)
             await ctx.respond(components=[container])
 
             container = ui.build_pot_history([])
