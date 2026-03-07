@@ -16,11 +16,14 @@ def create_lightbulb_client(bot: hikari.GatewayBot) -> lightbulb.Client:
     return lightbulb.client_from_app(bot)
 
 
-def get_guild_ids() -> list[int]:
-    """Get the guild IDs to register slash commands to."""
+def get_guild_ids() -> list[int] | None:
+    """Get the guild IDs to register slash commands to.
+
+    Returns a list with the testing guild when set, or None for global registration.
+    """
     if settings.testing_guild_id:
         return [int(settings.testing_guild_id)]
-    return []
+    return None
 
 
 def _get_guild_channel(bot: hikari.GatewayBot, guild_id: str):
