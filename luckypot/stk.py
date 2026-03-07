@@ -10,6 +10,7 @@ from loguru import logger
 from luckypot.config import settings
 
 _client: stackcoin.Client | None = None
+_stackcoin_discord_id: str | None = None
 
 
 def get_client() -> stackcoin.Client:
@@ -27,6 +28,23 @@ def reset_client() -> None:
     """Reset the client (for testing or config changes)."""
     global _client
     _client = None
+
+
+async def fetch_stackcoin_discord_id() -> str | None:
+    """Fetch and cache the StackCoin Discord bot's user ID."""
+    global _stackcoin_discord_id
+    try:
+        _stackcoin_discord_id = await get_client().get_discord_bot_id()
+        logger.info(f"StackCoin Discord bot ID: {_stackcoin_discord_id}")
+        return _stackcoin_discord_id
+    except stackcoin.StackCoinError as e:
+        logger.error(f"Failed to fetch StackCoin Discord bot ID: {e}")
+        return None
+
+
+def get_stackcoin_discord_id() -> str | None:
+    """Return the cached StackCoin Discord bot user ID, or None if not fetched."""
+    return _stackcoin_discord_id
 
 
 async def close_client() -> None:

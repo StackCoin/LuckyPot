@@ -64,6 +64,8 @@ async def on_started(_event: hikari.StartedEvent) -> None:
         finally:
             c.close()
 
+    await stk.fetch_stackcoin_discord_id()
+
     _gateway = stackcoin.Gateway(
         ws_url=settings.stackcoin_ws_url,
         token=settings.stackcoin_api_token,

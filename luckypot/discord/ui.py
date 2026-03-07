@@ -1,6 +1,7 @@
 import hikari
 from hikari.impl.special_endpoints import ContainerComponentBuilder
 
+from luckypot import stk
 from luckypot.discord.scheduler import next_draw_time
 
 BRAND_COLOR = hikari.Color(0x7C3AED)
@@ -8,11 +9,14 @@ BRAND_COLOR = hikari.Color(0x7C3AED)
 
 def build_entry_pending(amount: int) -> ContainerComponentBuilder:
     """Build response for a successful pot entry (pending payment)."""
+    bot_id = stk.get_stackcoin_discord_id()
+    bot_ref = f"<@{bot_id}>" if bot_id else "StackCoin"
+
     container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
     container.add_text_display("🎲 Pot Entry Submitted!")
     container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
     container.add_text_display(
-        f"Accept the **{amount} STK** payment request from StackCoin via DMs to confirm your spot."
+        f"Accept the **{amount} STK** payment request from {bot_ref} via DMs to confirm your spot."
     )
     return container
 
