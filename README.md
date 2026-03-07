@@ -32,6 +32,7 @@ All environment variables are prefixed with `LUCKYPOT_`.
 | `LUCKYPOT_DEBUG_MODE`       | No       | `false`                                | Enable `/force-end-pot` command      |
 | `LUCKYPOT_DAILY_DRAW_HOUR`  | No       | `0`                                    | Daily draw hour (UTC)                |
 | `LUCKYPOT_DAILY_DRAW_MINUTE`| No       | `0`                                    | Daily draw minute (UTC)              |
+| `LUCKYPOT_DRAW_INTERVAL_MINUTES`| No   | `0`                                    | When >0, overrides daily schedule with a repeating interval (for testing) |
 
 ## Slash Commands
 

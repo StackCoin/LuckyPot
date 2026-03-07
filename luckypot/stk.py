@@ -29,6 +29,14 @@ def reset_client() -> None:
     _client = None
 
 
+async def close_client() -> None:
+    """Close the shared client, releasing its connection pool."""
+    global _client
+    if _client is not None:
+        await _client.close()
+        _client = None
+
+
 async def get_user_by_discord_id(discord_id: str) -> dict | None:
     """Look up a StackCoin user by their Discord ID."""
     try:
