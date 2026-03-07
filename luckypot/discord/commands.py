@@ -35,15 +35,18 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                 status = result.get("status", "error")
 
                 if status == "pending":
-                    container = ui.build_entry_pending(
-                        request_id=result.get("request_id", 0),
-                        amount=POT_ENTRY_COST,
-                    )
+                    container = ui.build_entry_pending(amount=POT_ENTRY_COST)
                     await ctx.respond(
                         components=[container], flags=hikari.MessageFlag.EPHEMERAL
                     )
                 elif status == "instant_win":
-                    container = ui.build_entry_instant_win()
+                    amount = result.get("winning_amount", 0)
+                    container = ui.build_entry_instant_win(winning_amount=amount)
+                    await ctx.respond(
+                        components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                    )
+                elif status == "instant_win_free_entry":
+                    container = ui.build_entry_instant_win_free()
                     await ctx.respond(
                         components=[container], flags=hikari.MessageFlag.EPHEMERAL
                     )
@@ -129,6 +132,111 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                 await ctx.respond(
                     components=[container], flags=hikari.MessageFlag.EPHEMERAL
                 )
+
+    @client.register(guilds=guilds)
+    class DisplayAllMessages(
+        lightbulb.SlashCommand,
+        name="display-all-messages",
+        description="[DEBUG] Preview all bot messages for UI review",
+    ):
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            user_mention = f"<@{ctx.user.id}>"
+
+            # --- Ephemeral slash command responses ---
+            await ctx.respond(
+                "**--- Slash Command Responses (ephemeral in prod) ---**"
+            )
+
+            container = ui.build_entry_pending(amount=5)
+            await ctx.respond(components=[container])
+
+            container = ui.build_entry_instant_win(winning_amount=25)
+            await ctx.respond(components=[container])
+
+            container = ui.build_entry_instant_win_free()
+            await ctx.respond(components=[container])
+
+            container = ui.build_entry_already_entered()
+            await ctx.respond(components=[container])
+
+            container = ui.build_entry_error(
+                "You don't have a StackCoin account. Please register first."
+            )
+            await ctx.respond(components=[container])
+
+            sample_status_active = {
+                "active": True,
+                "total_amount": 25,
+                "participants": 5,
+                "pot_id": 42,
+            }
+            container = ui.build_pot_status(sample_status_active)
+            await ctx.respond(components=[container])
+
+            container = ui.build_pot_status({"active": False})
+            await ctx.respond(components=[container])
+
+            sample_history = [
+                {
+                    "winner_discord_id": str(ctx.user.id),
+                    "winning_amount": 30,
+                    "win_type": "DAILY DRAW",
+                    "ended_at": "2026-03-06 18:00:00",
+                },
+                {
+                    "winner_discord_id": str(ctx.user.id),
+                    "winning_amount": 15,
+                    "win_type": "INSTANT WIN",
+                    "ended_at": "2026-03-05 12:30:00",
+                },
+            ]
+            container = ui.build_pot_history(sample_history)
+            await ctx.respond(components=[container])
+
+            container = ui.build_pot_history([])
+            await ctx.respond(components=[container])
+
+            # --- Channel announcements ---
+            await ctx.respond(
+                "**--- Channel Announcements ---**"
+            )
+
+            await ctx.respond(
+                f"{user_mention} entered the pot! The pot is now at 25 STK. Use `/enter-pot` to enter!"
+            )
+
+            await ctx.respond(
+                f"{user_mention} rolled an instant win, but the pot is empty! They get a free entry instead."
+            )
+
+            await ctx.respond(
+                f"{user_mention} won 25 STK! (DAILY DRAW)"
+            )
+
+            await ctx.respond(
+                f"{user_mention} won 25 STK! (INSTANT WIN)"
+            )
+
+            await ctx.respond(
+                f"Time for the daily draw!"
+            )
+
+            await ctx.respond(
+                f"The winner is..."
+            )
+
+            await ctx.respond(
+                f"{user_mention} has won the daily draw of 25 STK!"
+            )
+
+            await ctx.respond(
+                f"Failed to send winnings to {user_mention}. The pot remains active."
+            )
+
+            await ctx.respond(
+                f"{user_mention}'s pot entry was cancelled (payment denied)."
+            )
 
     if settings.debug_mode:
 
