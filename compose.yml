@@ -1,0 +1,8 @@
+services:
+  luckypot:
+    build: .
+    env_file: .env
+    environment:
+      - LUCKYPOT_DB_PATH=/app/data/luckypot.db
+    volumes:
+      - ./data:/app/data
