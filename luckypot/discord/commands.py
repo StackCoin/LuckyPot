@@ -132,7 +132,7 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                     components=[container], flags=hikari.MessageFlag.EPHEMERAL
                 )
 
-    if settings.debug_mode:
+    if settings.debug_mode and guilds:
 
         @client.register(guilds=guilds)
         class ForceEndPot(
