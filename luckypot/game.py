@@ -65,10 +65,56 @@ async def enter_pot(
                     "message": "You have already entered this pot!",
                 }
 
-            if db.has_pending_instant_wins(conn, guild_id):
+            # Roll for instant win BEFORE creating a payment request.
+            # An instant win skips payment entirely — the user wins the
+            # current pot for free and the pot ends immediately.
+            if random.random() < RANDOM_WIN_CHANCE:
+                participants = db.get_pot_participants(conn, pot_id)
+                total_pot = sum(p["amount"] for p in participants)
+                logger.info(
+                    f"Instant win rolled for discord_id={discord_id} in pot #{pot_id}"
+                )
+
+                if total_pot > 0:
+                    won = await process_pot_win(
+                        conn,
+                        guild_id=guild_id,
+                        winner_id=discord_id,
+                        winning_amount=total_pot,
+                        win_type="INSTANT WIN",
+                        announce_fn=announce_fn,
+                    )
+                    if won:
+                        return {
+                            "status": "instant_win",
+                            "winning_amount": total_pot,
+                            "message": f"You rolled an INSTANT WIN and won {total_pot} STK!",
+                        }
+                    else:
+                        return {
+                            "status": "error",
+                            "message": "You rolled an instant win but the payout failed. The pot remains active.",
+                        }
+                else:
+                    # Empty pot — nothing to win, treat as a free entry instead
+                    if announce_fn:
+                        await announce_fn(
+                            f"<@{discord_id}> rolled an instant win, but the pot is empty! They get a free entry instead."
+                        )
+
+                # Fall through to create a free confirmed entry (no payment)
+                entry_id = db.add_entry(
+                    conn,
+                    pot_id=pot_id,
+                    discord_id=discord_id,
+                    amount=0,
+                    stackcoin_request_id=None,
+                    status="confirmed",
+                )
                 return {
-                    "status": "error",
-                    "message": "An instant win is being processed. Please try again shortly.",
+                    "status": "instant_win_free_entry",
+                    "entry_id": entry_id,
+                    "message": "You rolled an instant win on an empty pot — free entry!",
                 }
 
             stk_user_id = stk_user["id"]
@@ -87,29 +133,13 @@ async def enter_pot(
 
             request_id = str(req["request_id"])
 
-            is_instant_win = random.random() < RANDOM_WIN_CHANCE
-            initial_status = "pending"
-
             entry_id = db.add_entry(
                 conn,
                 pot_id=pot_id,
                 discord_id=discord_id,
                 amount=POT_ENTRY_COST,
                 stackcoin_request_id=request_id,
-                status=initial_status,
             )
-
-            if is_instant_win:
-                db.mark_entry_instant_win(conn, entry_id)
-                logger.info(
-                    f"Instant win rolled for discord_id={discord_id} entry_id={entry_id}"
-                )
-                return {
-                    "status": "instant_win",
-                    "entry_id": entry_id,
-                    "request_id": request_id,
-                    "message": "You rolled an INSTANT WIN! Accept the payment request to claim your prize!",
-                }
 
             return {
                 "status": "pending",
@@ -297,12 +327,6 @@ async def daily_pot_draw(
         async with _guild_locks[guild_id]:
             conn = db.get_connection()
             try:
-                if db.has_pending_instant_wins(conn, guild_id):
-                    logger.info(
-                        f"Skipping daily draw for guild {guild_id}: pending instant wins"
-                    )
-                    continue
-
                 roll = random.random()
                 if roll < DAILY_DRAW_CHANCE:
                     logger.info(f"Daily draw triggered for guild {guild_id} (roll={roll:.3f})")
@@ -365,34 +389,7 @@ async def on_request_accepted(event_data: RequestAcceptedData, announce: RawAnno
             discord_id = entry["discord_id"]
             announce_fn = partial(announce, guild_id) if announce else None
 
-            if entry["status"] == "instant_win":
-                db.confirm_entry(conn, entry_id)
-                logger.info(
-                    f"Instant win confirmed for entry {entry_id}, discord_id={discord_id}"
-                )
-
-                pot = db.get_active_pot(conn, guild_id)
-                if pot is None:
-                    logger.error(f"No active pot for guild {guild_id} during instant win")
-                    return
-
-                participants = db.get_pot_participants(conn, pot["pot_id"])
-                total_pot = sum(p["amount"] for p in participants)
-
-                if announce_fn:
-                    await announce_fn(
-                        f"<@{discord_id}> entered the pot and rolled an INSTANT WIN! The pot was at {total_pot} STK!"
-                    )
-
-                await process_pot_win(
-                    conn,
-                    guild_id=guild_id,
-                    winner_id=discord_id,
-                    winning_amount=total_pot,
-                    win_type="INSTANT WIN",
-                    announce_fn=announce_fn,
-                )
-            elif entry["status"] == "pending":
+            if entry["status"] == "pending":
                 db.confirm_entry(conn, entry_id)
                 logger.info(f"Entry {entry_id} confirmed for discord_id={discord_id}")
                 if announce_fn:

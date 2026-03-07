@@ -154,15 +154,6 @@ def deny_entry(conn, entry_id: int):
     conn.commit()
 
 
-def mark_entry_instant_win(conn, entry_id: int):
-    """Mark an entry as an instant win (pending payment to winner)."""
-    conn.execute(
-        "UPDATE pot_entries SET status = 'instant_win' WHERE entry_id = ?",
-        (entry_id,),
-    )
-    conn.commit()
-
-
 def get_confirmed_entries(conn, pot_id: int) -> list[dict]:
     """Get all confirmed entries for a pot."""
     cursor = conn.execute(
@@ -173,9 +164,9 @@ def get_confirmed_entries(conn, pot_id: int) -> list[dict]:
 
 
 def get_pot_participants(conn, pot_id: int) -> list[dict]:
-    """Get all confirmed and instant_win entries for a pot (active participants)."""
+    """Get all confirmed entries for a pot (active participants)."""
     cursor = conn.execute(
-        "SELECT * FROM pot_entries WHERE pot_id = ? AND status IN ('confirmed', 'instant_win')",
+        "SELECT * FROM pot_entries WHERE pot_id = ? AND status = 'confirmed'",
         (pot_id,),
     )
     return [dict(row) for row in cursor.fetchall()]
@@ -190,7 +181,7 @@ def get_pot_status(conn, guild_id: str) -> dict:
     cursor = conn.execute(
         """SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total
            FROM pot_entries
-           WHERE pot_id = ? AND status IN ('confirmed', 'instant_win')""",
+           WHERE pot_id = ? AND status = 'confirmed'""",
         (pot["pot_id"],),
     )
     row = cursor.fetchone()
@@ -206,19 +197,8 @@ def has_user_entered(conn, pot_id: int, discord_id: str) -> bool:
     """Check if a user has already entered the active pot."""
     cursor = conn.execute(
         """SELECT COUNT(*) as count FROM pot_entries
-           WHERE pot_id = ? AND discord_id = ? AND status IN ('pending', 'confirmed', 'instant_win')""",
+           WHERE pot_id = ? AND discord_id = ? AND status IN ('pending', 'confirmed')""",
         (pot_id, discord_id),
-    )
-    return cursor.fetchone()["count"] > 0
-
-
-def has_pending_instant_wins(conn, guild_id: str) -> bool:
-    """Check if there are any pending instant win entries for a guild's active pot."""
-    cursor = conn.execute(
-        """SELECT COUNT(*) as count FROM pot_entries pe
-           JOIN pots p ON pe.pot_id = p.pot_id
-           WHERE p.guild_id = ? AND p.is_active = TRUE AND pe.status = 'instant_win'""",
-        (guild_id,),
     )
     return cursor.fetchone()["count"] > 0
 

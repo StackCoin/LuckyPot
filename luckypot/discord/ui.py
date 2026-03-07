@@ -6,7 +6,7 @@ from luckypot.discord.scheduler import next_draw_time
 BRAND_COLOR = hikari.Color(0x7C3AED)
 
 
-def build_entry_pending(request_id: int, amount: int) -> ContainerComponentBuilder:
+def build_entry_pending(amount: int) -> ContainerComponentBuilder:
     """Build response for a successful pot entry (pending payment)."""
     container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
     container.add_text_display("🎲 Pot Entry Submitted!")
@@ -17,13 +17,24 @@ def build_entry_pending(request_id: int, amount: int) -> ContainerComponentBuild
     return container
 
 
-def build_entry_instant_win() -> ContainerComponentBuilder:
-    """Build response for an instant win roll (still needs payment)."""
+def build_entry_instant_win(winning_amount: int) -> ContainerComponentBuilder:
+    """Build response for an instant win — the user won the pot immediately."""
     container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
     container.add_text_display("🎉 INSTANT WIN!")
     container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
     container.add_text_display(
-        "You rolled an **instant win**! Accept the payment request to claim the entire pot!"
+        f"You won **{winning_amount} STK**! The winnings have been sent to your account."
+    )
+    return container
+
+
+def build_entry_instant_win_free() -> ContainerComponentBuilder:
+    """Build response for an instant win on an empty pot — free entry."""
+    container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
+    container.add_text_display("🎉 INSTANT WIN... on an empty pot!")
+    container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+    container.add_text_display(
+        "You rolled an instant win, but the pot was empty. You got a **free entry** instead!"
     )
     return container
 
@@ -65,10 +76,6 @@ def build_pot_status(status: dict) -> ContainerComponentBuilder:
 
     next_draw = next_draw_time()
     container.add_text_display(f"⏰ Next Draw: <t:{int(next_draw.timestamp())}:R>")
-
-    if "pot_id" in status:
-        container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
-        container.add_text_display(f"Pot ID: {status['pot_id']}")
 
     return container
 
