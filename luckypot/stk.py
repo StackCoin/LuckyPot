@@ -89,12 +89,18 @@ async def get_bot_balance() -> int | None:
 
 
 async def send_stk(
-    to_user_id: int, amount: int, label: str | None = None, idempotency_key: str | None = None
+    to_user_id: int,
+    amount: int,
+    label: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict | None:
     """Send STK to a user. Returns response dict or None on failure."""
     try:
         result = await get_client().send(
-            to_user_id=to_user_id, amount=amount, label=label, idempotency_key=idempotency_key
+            to_user_id=to_user_id,
+            amount=amount,
+            label=label,
+            idempotency_key=idempotency_key,
         )
         return {
             "success": result.success,
@@ -109,12 +115,18 @@ async def send_stk(
 
 
 async def create_request(
-    to_user_id: int, amount: int, label: str | None = None, idempotency_key: str | None = None
+    to_user_id: int,
+    amount: int,
+    label: str | None = None,
+    idempotency_key: str | None = None,
 ) -> dict | None:
     """Create a payment request. Returns response dict or None on failure."""
     try:
         result = await get_client().create_request(
-            to_user_id=to_user_id, amount=amount, label=label, idempotency_key=idempotency_key
+            to_user_id=to_user_id,
+            amount=amount,
+            label=label,
+            idempotency_key=idempotency_key,
         )
         return {
             "success": result.success,
@@ -123,7 +135,9 @@ async def create_request(
             "status": result.status,
         }
     except stackcoin.StackCoinError as e:
-        logger.error(f"Failed to create request for {amount} STK from user {to_user_id}: {e}")
+        logger.error(
+            f"Failed to create request for {amount} STK from user {to_user_id}: {e}"
+        )
         return None
 
 

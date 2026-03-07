@@ -109,6 +109,3 @@ def build_pot_history(history: list[dict], page: int = 1) -> ContainerComponentB
         )
 
     return container
-
-
-

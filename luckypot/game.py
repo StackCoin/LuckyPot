@@ -331,9 +331,13 @@ async def daily_pot_draw(
             try:
                 roll = random.random()
                 if roll < DAILY_DRAW_CHANCE:
-                    logger.info(f"Daily draw triggered for guild {guild_id} (roll={roll:.3f})")
+                    logger.info(
+                        f"Daily draw triggered for guild {guild_id} (roll={roll:.3f})"
+                    )
                     guild_announce = partial(announce, guild_id) if announce else None
-                    guild_edit = partial(edit_announce, guild_id) if edit_announce else None
+                    guild_edit = (
+                        partial(edit_announce, guild_id) if edit_announce else None
+                    )
                     await end_pot_with_winner(
                         guild_id,
                         win_type="DAILY DRAW",
@@ -348,7 +352,9 @@ async def daily_pot_draw(
                 conn.close()
 
 
-async def on_request_accepted(event_data: RequestAcceptedData, announce: RawAnnounceFn = None):
+async def on_request_accepted(
+    event_data: RequestAcceptedData, announce: RawAnnounceFn = None
+):
     """Handle a payment request being accepted.
 
     When a user accepts the pot entry payment, we confirm their entry.
@@ -411,7 +417,9 @@ async def on_request_accepted(event_data: RequestAcceptedData, announce: RawAnno
             conn.close()
 
 
-async def on_request_denied(event_data: RequestDeniedData, announce: RawAnnounceFn = None):
+async def on_request_denied(
+    event_data: RequestDeniedData, announce: RawAnnounceFn = None
+):
     """Handle a payment request being denied.
 
     ``announce`` is the raw announce function that takes ``(guild_id, message)``.
