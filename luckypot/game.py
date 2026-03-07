@@ -50,7 +50,7 @@ async def enter_pot(
     if stk_user is None:
         return {
             "status": "error",
-            "message": "You don't have a StackCoin account. Please register first.",
+            "message": "You don't have a StackCoin account. Please `/dole` first.",
         }
 
     async with _guild_locks[guild_id]:
@@ -233,7 +233,8 @@ async def process_pot_win(
                 announce_fn, edit_announce_fn, winner_id, winning_amount, win_type
             )
         elif announce_fn:
-            await announce_fn(f"<@{winner_id}> won {winning_amount} STK! ({win_type})")
+            suffix = f" ({win_type})" if win_type != "DAILY DRAW" else ""
+            await announce_fn(f"<@{winner_id}> won {winning_amount} STK!{suffix}")
     else:
         logger.error(f"Failed to send winnings to {winner_id}, pot remains active")
         if announce_fn:
@@ -252,6 +253,7 @@ async def _dramatic_draw_reveal(
 ) -> None:
     """Send a staged dramatic reveal for a pot draw."""
     label = win_type.lower()
+    suffix = f" ({win_type})" if win_type != "DAILY DRAW" else ""
     msg = await announce_fn(f"Time for the {label}!")
     if msg is None:
         return
@@ -263,7 +265,7 @@ async def _dramatic_draw_reveal(
     if msg:
         await edit_announce_fn(
             msg,
-            f"<@{winner_id}> has won the {label} of {winning_amount} STK!",
+            f"<@{winner_id}> has won {winning_amount} STK!{suffix}",
         )
 
 
