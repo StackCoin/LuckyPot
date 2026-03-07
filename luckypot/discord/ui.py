@@ -96,22 +96,4 @@ def build_pot_history(history: list[dict]) -> ContainerComponentBuilder:
     return container
 
 
-def build_winner_announcement(
-    winner_discord_id: str, winning_amount: int, win_type: str
-) -> str:
-    """Build a winner announcement message for the guild channel."""
-    return (
-        f"🎉 **{win_type} WINNER!** 🎉\n\n"
-        f"<@{winner_discord_id}> has won the pot of **{winning_amount} STK**!\n"
-        f"Congratulations! 🎊\n\n"
-        f"A new pot has started — use `/enter-pot` to join!"
-    )
 
-
-def build_no_winner_announcement(pot_amount: int) -> str:
-    """Build a daily draw 'no winner' announcement."""
-    return (
-        f"🎲 Daily draw occurred, but the pot continues! No winner this time.\n"
-        f"Current pot: **{pot_amount} STK**\n"
-        f"Use `/enter-pot` to increase your chances!"
-    )
