@@ -88,7 +88,8 @@ def build_pot_history(history: list[dict], page: int = 1) -> ContainerComponentB
     container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
 
     if not history:
-        container.add_text_display("No completed pots yet.")
+        empty_msg = "No completed pots yet." if page == 1 else "Page has no pots."
+        container.add_text_display(empty_msg)
         return container
 
     for pot in history:
