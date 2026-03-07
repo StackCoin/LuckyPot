@@ -71,11 +71,11 @@ def build_pot_status(status: dict) -> ContainerComponentBuilder:
     container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
     container.add_text_display("🎰 Lucky Pot Status")
     container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
-    container.add_text_display(f"💰 Total Pot: **{status['total_amount']} STK**")
-    container.add_text_display(f"👥 Participants: **{status['participants']}**")
+    container.add_text_display(f"Total Pot: **{status['total_amount']} STK**")
+    container.add_text_display(f"Participants: **{status['participants']}**")
 
     next_draw = next_draw_time()
-    container.add_text_display(f"⏰ Next Draw: <t:{int(next_draw.timestamp())}:R>")
+    container.add_text_display(f"Next Draw: <t:{int(next_draw.timestamp())}:R>")
 
     return container
 
@@ -93,11 +93,13 @@ def build_pot_history(history: list[dict]) -> ContainerComponentBuilder:
     for pot in history:
         winner = pot.get("winner_discord_id")
         amount = pot.get("winning_amount", 0)
-        win_type = pot.get("win_type", "DRAW")
+        win_type = pot.get("win_type", "DAILY DRAW")
         ended = pot.get("ended_at", "?")
         winner_text = f"<@{winner}>" if winner else "No winner"
+        # Only annotate non-default win types (instant win, debug, etc.)
+        suffix = f" ({win_type})" if win_type != "DAILY DRAW" else ""
         container.add_text_display(
-            f"**{amount} STK** → {winner_text} ({win_type}) — {ended}"
+            f"**{amount} STK** → {winner_text}{suffix} — {ended}"
         )
 
     return container

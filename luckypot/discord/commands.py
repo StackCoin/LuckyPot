@@ -161,7 +161,7 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
             await ctx.respond(components=[container])
 
             container = ui.build_entry_error(
-                "You don't have a StackCoin account. Please register first."
+                "You don't have a StackCoin account. Please `/dole` first."
             )
             await ctx.respond(components=[container])
 
@@ -211,7 +211,7 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
             )
 
             await ctx.respond(
-                f"{user_mention} won 25 STK! (DAILY DRAW)"
+                f"{user_mention} won 25 STK!"
             )
 
             await ctx.respond(
@@ -219,15 +219,15 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
             )
 
             await ctx.respond(
-                f"Time for the daily draw!"
+                "Time for the daily draw!"
             )
 
             await ctx.respond(
-                f"The winner is..."
+                "The winner is..."
             )
 
             await ctx.respond(
-                f"{user_mention} has won the daily draw of 25 STK!"
+                f"{user_mention} has won 25 STK!"
             )
 
             await ctx.respond(
