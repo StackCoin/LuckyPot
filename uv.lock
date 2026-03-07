@@ -359,7 +359,7 @@ requires-dist = [
     { name = "hikari-lightbulb", specifier = ">=3.1.1" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "pydantic-settings", specifier = ">=2.0" },
-    { name = "stackcoin", specifier = ">=0.1.1" },
+    { name = "stackcoin", specifier = ">=0.1.2" },
 ]
 
 [[package]]
@@ -605,16 +605,16 @@ wheels = [
 
 [[package]]
 name = "stackcoin"
-version = "0.1.1"
+version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/50/df/36d9b185ef3386e6780fe9d80147b1948c9b4b803d1e7e3aaab51194647f/stackcoin-0.1.1.tar.gz", hash = "sha256:ab638896b1e5e0b06bcca4c9ae7bc2bc4428114844e69d563c6ba1f0d8c6651b", size = 21615, upload-time = "2026-03-06T23:48:48.921Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/18/cf/1a16f2a249c71d2c69079ca580bd677cf6a6f1e6d0f122466e07dfde475f/stackcoin-0.1.2.tar.gz", hash = "sha256:bc7de6d15a996e1e8b9a9fbf456f08168a64abec4d0e6e1b1b14f55f46d14570", size = 21699, upload-time = "2026-03-07T01:23:54.061Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/31/78/b9092073d5a4b5e5707ec4edb6531eb873b1dd1966e9e1aabcd84b1ef423/stackcoin-0.1.1-py3-none-any.whl", hash = "sha256:dc963ebffc783cd410506edf0953565d32556b3a2f059490b8a79e288ba8e322", size = 10311, upload-time = "2026-03-06T23:48:47.92Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/fa/40c213ab43d993011e9e953263c5c8e6e1bf6eab05484f3d612f2e987503/stackcoin-0.1.2-py3-none-any.whl", hash = "sha256:91b612a449a1feb7923f6ee6c260c72c32e57809aea18bffa92157525566b5fa", size = 10399, upload-time = "2026-03-07T01:23:53.017Z" },
 ]
 
 [[package]]
