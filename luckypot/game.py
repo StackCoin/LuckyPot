@@ -9,8 +9,8 @@ from luckypot import db, stk
 from stackcoin import RequestAcceptedData, RequestDeniedData
 
 POT_ENTRY_COST = 5
-DAILY_DRAW_CHANCE = 0.6
-RANDOM_WIN_CHANCE = 0.05
+DAILY_DRAW_CHANCE = 0.95
+RANDOM_WIN_CHANCE = 0.025
 
 # Per-guild lock to serialize pot mutations (entries, instant wins, draws).
 # Prevents race conditions like a daily draw and instant-win confirmation
@@ -348,6 +348,17 @@ async def daily_pot_draw(
                     logger.info(
                         f"Daily draw skipped for guild {guild_id} (roll={roll:.3f}, needed < {DAILY_DRAW_CHANCE})"
                     )
+                    if announce:
+                        pot = db.get_active_pot(conn, guild_id)
+                        if pot:
+                            participants = db.get_pot_participants(conn, pot["pot_id"])
+                            total = sum(p["amount"] for p in participants)
+                            guild_announce = partial(announce, guild_id)
+                            await guild_announce(
+                                f"The daily draw was held, but no winner was chosen today. "
+                                f"The pot carries over with {total} STK from {len(participants)} "
+                                f"{'entry' if len(participants) == 1 else 'entries'}!"
+                            )
             finally:
                 conn.close()
 
