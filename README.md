@@ -2,7 +2,7 @@
 
 A lottery bot for [StackCoin](https://github.com/StackCoin/StackCoin). Players
 enter a pot by paying STK, and a daily draw selects a winner who takes the
-entire pot. There's also a 5% chance of an instant win on entry.
+entire pot. There's also a small chance of an instant win on entry.
 
 ## Setup
 
