@@ -11,4 +11,5 @@ wheels/
 *.db
 *.log
 
+tmp
 PLAN.md
