@@ -63,6 +63,23 @@ def build_entry_error(message: str) -> ContainerComponentBuilder:
     return container
 
 
+def build_entry_banned(expires_at: str) -> ContainerComponentBuilder:
+    """Build response when a user is banned from entering pots."""
+    from datetime import datetime, timezone
+
+    # Parse the SQLite timestamp and convert to Discord timestamp
+    dt = datetime.strptime(expires_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    unix_ts = int(dt.timestamp())
+
+    container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
+    container.add_text_display("🚫 Banned")
+    container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+    container.add_text_display(
+        f"You are banned from entering pots. Your ban expires <t:{unix_ts}:R>."
+    )
+    return container
+
+
 def build_pot_status(status: dict) -> ContainerComponentBuilder:
     """Build the pot status display."""
     if not status.get("active"):

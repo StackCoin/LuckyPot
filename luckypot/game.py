@@ -6,6 +6,7 @@ from typing import Any, Callable, Awaitable
 
 from loguru import logger
 from luckypot import db, stk
+from luckypot.config import settings
 from stackcoin import RequestAcceptedData, RequestDeniedData
 
 POT_ENTRY_COST = 5
@@ -58,6 +59,15 @@ async def enter_pot(
         try:
             pot = db.ensure_active_pot(conn, guild_id)
             pot_id = pot["pot_id"]
+
+            # Check for active ban before anything else
+            active_ban = db.get_active_ban(conn, discord_id, guild_id)
+            if active_ban:
+                return {
+                    "status": "banned",
+                    "expires_at": active_ban["expires_at"],
+                    "message": f"You are banned from entering pots until {active_ban['expires_at']} UTC.",
+                }
 
             if db.has_user_entered(conn, pot_id, discord_id):
                 return {
@@ -463,9 +473,19 @@ async def on_request_denied(
 
             db.deny_entry(conn, entry_id)
             logger.info(f"Entry {entry_id} denied for discord_id={discord_id}")
+            db.ban_user(
+                conn,
+                discord_id=discord_id,
+                guild_id=guild_id,
+                reason="payment_denied",
+                duration_hours=settings.ban_duration_hours,
+            )
+            logger.info(
+                f"User {discord_id} banned for {settings.ban_duration_hours}h in guild {guild_id} (payment denied)"
+            )
             if announce_fn:
                 await announce_fn(
-                    f"<@{discord_id}>'s pot entry was cancelled (payment denied)."
+                    f"<@{discord_id}>'s pot entry was cancelled (payment denied). They have been banned from entering pots for {settings.ban_duration_hours} hours."
                 )
         finally:
             conn.close()

@@ -47,6 +47,18 @@ def init_database():
             ON pot_entries(pot_id);
         CREATE INDEX IF NOT EXISTS idx_pot_entries_request_id
             ON pot_entries(stackcoin_request_id);
+
+        CREATE TABLE IF NOT EXISTS user_bans (
+            ban_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_id TEXT NOT NULL,
+            guild_id TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_bans_lookup
+            ON user_bans(discord_id, guild_id, expires_at);
     """)
     conn.commit()
     conn.close()
@@ -152,6 +164,28 @@ def deny_entry(conn, entry_id: int):
         (entry_id,),
     )
     conn.commit()
+
+
+def ban_user(conn, discord_id: str, guild_id: str, reason: str, duration_hours: int):
+    """Ban a user from entering pots in a guild for a specified duration."""
+    conn.execute(
+        """INSERT INTO user_bans (discord_id, guild_id, reason, expires_at)
+           VALUES (?, ?, ?, datetime('now', '+' || ? || ' hours'))""",
+        (discord_id, guild_id, reason, duration_hours),
+    )
+    conn.commit()
+
+
+def get_active_ban(conn, discord_id: str, guild_id: str) -> dict | None:
+    """Get the active (non-expired) ban for a user in a guild, or None."""
+    cursor = conn.execute(
+        """SELECT * FROM user_bans
+           WHERE discord_id = ? AND guild_id = ? AND expires_at > datetime('now')
+           ORDER BY expires_at DESC LIMIT 1""",
+        (discord_id, guild_id),
+    )
+    row = cursor.fetchone()
+    return dict(row) if row else None
 
 
 def get_confirmed_entries(conn, pot_id: int) -> list[dict]:

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     testing_guild_id: str = ""
     debug_mode: bool = False
+    ban_duration_hours: int = 48
 
     daily_draw_hour: int = 0
     daily_draw_minute: int = 0

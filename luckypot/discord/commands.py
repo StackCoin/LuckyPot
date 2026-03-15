@@ -50,6 +50,12 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                     await ctx.respond(
                         components=[container], flags=hikari.MessageFlag.EPHEMERAL
                     )
+                elif status == "banned":
+                    expires_at = result.get("expires_at", "")
+                    container = ui.build_entry_banned(expires_at)
+                    await ctx.respond(
+                        components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                    )
                 elif status == "already_entered":
                     container = ui.build_entry_already_entered()
                     await ctx.respond(
