@@ -66,6 +66,9 @@ def init_database():
             enabled_at TEXT NOT NULL DEFAULT (datetime('now')),
             PRIMARY KEY (discord_id, guild_id)
         );
+
+        CREATE INDEX IF NOT EXISTS idx_auto_enter_guild
+            ON auto_enter_users(guild_id);
     """)
     conn.commit()
     conn.close()
