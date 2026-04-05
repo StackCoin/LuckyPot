@@ -12,6 +12,7 @@ from stackcoin import RequestAcceptedData, RequestDeniedData
 POT_ENTRY_COST = 5
 DAILY_DRAW_CHANCE = 0.95
 RANDOM_WIN_CHANCE = 0.025
+AUTO_ENTER_DELAY_SECONDS = 30
 
 # Per-guild lock to serialize pot mutations (entries, instant wins, draws).
 # Prevents race conditions like a daily draw and instant-win confirmation
@@ -245,6 +246,7 @@ async def process_pot_win(
         elif announce_fn:
             suffix = f" ({win_type})" if win_type != "DAILY DRAW" else ""
             await announce_fn(f"<@{winner_id}> won {winning_amount} STK!{suffix}")
+        asyncio.create_task(_auto_enter_users(guild_id, announce_fn=announce_fn))
     else:
         logger.error(f"Failed to send winnings to {winner_id}, pot remains active")
         if announce_fn:
@@ -276,6 +278,34 @@ async def _dramatic_draw_reveal(
         await edit_announce_fn(
             msg,
             f"<@{winner_id}> has won {winning_amount} STK!{suffix}",
+        )
+
+
+async def _auto_enter_users(guild_id: str, announce_fn: AnnounceFn = None) -> None:
+    """Wait briefly then auto-enter all opted-in users for a guild.
+
+    Called as a fire-and-forget task after a pot win is announced.
+    Uses the existing enter_pot() which handles all edge cases (bans,
+    already-entered, STK account missing, etc.).
+    """
+    await asyncio.sleep(AUTO_ENTER_DELAY_SECONDS)
+
+    conn = db.get_connection()
+    try:
+        discord_ids = db.get_auto_enter_users(conn, guild_id)
+    finally:
+        conn.close()
+
+    if not discord_ids:
+        return
+
+    logger.info(
+        f"Auto-entering {len(discord_ids)} user(s) into new pot for guild {guild_id}"
+    )
+    for discord_id in discord_ids:
+        result = await enter_pot(discord_id, guild_id, announce_fn=announce_fn)
+        logger.info(
+            f"Auto-enter for discord_id={discord_id} guild={guild_id}: status={result['status']}"
         )
 
 
