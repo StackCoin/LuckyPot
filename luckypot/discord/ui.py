@@ -126,3 +126,41 @@ def build_pot_history(history: list[dict], page: int = 1) -> ContainerComponentB
         )
 
     return container
+
+
+def build_auto_enter_opted_in() -> ContainerComponentBuilder:
+    """Build response when user successfully opts in to auto-enter."""
+    container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
+    container.add_text_display("✅ Auto-Enter Enabled")
+    container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+    container.add_text_display(
+        "You will automatically be entered into each new pot. "
+        "Use `/auto-enter enabled:False` to opt out."
+    )
+    return container
+
+
+def build_auto_enter_opted_out() -> ContainerComponentBuilder:
+    """Build response when user successfully opts out of auto-enter."""
+    container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
+    container.add_text_display("✅ Auto-Enter Disabled")
+    container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+    container.add_text_display(
+        "You will no longer be automatically entered into pots. "
+        "Use `/auto-enter` to opt back in."
+    )
+    return container
+
+
+def build_auto_enter_already_in_state(enabled: bool) -> ContainerComponentBuilder:
+    """Build response when user is already in the requested state."""
+    container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
+    if enabled:
+        container.add_text_display("ℹ️ Already Opted In")
+        container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+        container.add_text_display("You are already opted in to auto-enter.")
+    else:
+        container.add_text_display("ℹ️ Already Opted Out")
+        container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+        container.add_text_display("You are already opted out of auto-enter.")
+    return container

@@ -138,6 +138,52 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                     components=[container], flags=hikari.MessageFlag.EPHEMERAL
                 )
 
+    @client.register(guilds=guilds)
+    class AutoEnter(
+        lightbulb.SlashCommand,
+        name="auto-enter",
+        description="Automatically enter each new pot when one starts",
+    ):
+        enabled: bool = lightbulb.boolean(
+            "enabled",
+            "Whether to enable auto-enter (default: True)",
+            default=True,
+        )
+
+        @lightbulb.invoke
+        async def invoke(self, ctx: lightbulb.Context) -> None:
+            guild_id = str(ctx.guild_id)
+            discord_id = str(ctx.user.id)
+
+            try:
+                conn = db.get_connection()
+                try:
+                    current = db.get_auto_enter_status(conn, discord_id, guild_id)
+                    if current == self.enabled:
+                        container = ui.build_auto_enter_already_in_state(self.enabled)
+                        await ctx.respond(
+                            components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                        )
+                        return
+                    db.set_auto_enter(conn, discord_id, guild_id, self.enabled)
+                finally:
+                    conn.close()
+
+                if self.enabled:
+                    container = ui.build_auto_enter_opted_in()
+                else:
+                    container = ui.build_auto_enter_opted_out()
+                await ctx.respond(
+                    components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                )
+
+            except Exception as e:
+                logger.error(f"Error in /auto-enter for user {ctx.user.id}: {e}")
+                container = ui.build_entry_error(f"An unexpected error occurred: {e}")
+                await ctx.respond(
+                    components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                )
+
     if settings.debug_mode and guilds:
 
         @client.register(guilds=guilds)
