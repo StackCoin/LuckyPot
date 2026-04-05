@@ -246,6 +246,8 @@ async def process_pot_win(
         elif announce_fn:
             suffix = f" ({win_type})" if win_type != "DAILY DRAW" else ""
             await announce_fn(f"<@{winner_id}> won {winning_amount} STK!{suffix}")
+        # Fire-and-forget: the delay in _auto_enter_users ensures _guild_locks[guild_id]
+        # is released by the time enter_pot() is called for opted-in users.
         asyncio.create_task(_auto_enter_users(guild_id, announce_fn=announce_fn))
     else:
         logger.error(f"Failed to send winnings to {winner_id}, pot remains active")
@@ -288,25 +290,36 @@ async def _auto_enter_users(guild_id: str, announce_fn: AnnounceFn = None) -> No
     Uses the existing enter_pot() which handles all edge cases (bans,
     already-entered, STK account missing, etc.).
     """
-    await asyncio.sleep(AUTO_ENTER_DELAY_SECONDS)
-
-    conn = db.get_connection()
     try:
-        discord_ids = db.get_auto_enter_users(conn, guild_id)
-    finally:
-        conn.close()
+        await asyncio.sleep(AUTO_ENTER_DELAY_SECONDS)
 
-    if not discord_ids:
-        return
+        conn = db.get_connection()
+        try:
+            discord_ids = db.get_auto_enter_users(conn, guild_id)
+        finally:
+            conn.close()
 
-    logger.info(
-        f"Auto-entering {len(discord_ids)} user(s) into new pot for guild {guild_id}"
-    )
-    for discord_id in discord_ids:
-        result = await enter_pot(discord_id, guild_id, announce_fn=announce_fn)
+        if not discord_ids:
+            return
+
         logger.info(
-            f"Auto-enter for discord_id={discord_id} guild={guild_id}: status={result['status']}"
+            f"Auto-entering {len(discord_ids)} user(s) into new pot for guild {guild_id}"
         )
+        for discord_id in discord_ids:
+            try:
+                result = await enter_pot(discord_id, guild_id, announce_fn=announce_fn)
+                logger.info(
+                    f"Auto-enter for discord_id={discord_id} guild={guild_id}: status={result['status']}"
+                )
+            except Exception:
+                logger.exception(
+                    f"Auto-enter failed for discord_id={discord_id} guild={guild_id}"
+                )
+    except asyncio.CancelledError:
+        logger.warning(f"Auto-enter task cancelled for guild {guild_id}")
+        raise
+    except Exception:
+        logger.exception(f"Auto-enter task failed for guild {guild_id}")
 
 
 async def end_pot_with_winner(
