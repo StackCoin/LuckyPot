@@ -54,7 +54,7 @@ def make_announce_fn(bot: hikari.GatewayBot):
             if channel is None:
                 return None
 
-            msg = await channel.send(message)
+            msg = await channel.send(message, user_mentions=True)
             logger.info(f"Announced to guild {guild_id} channel {channel_id}")
             return msg
         except Exception as e:
@@ -69,7 +69,7 @@ def make_edit_announce_fn(bot: hikari.GatewayBot):
         guild_id: str, message: hikari.Message, new_content: str
     ) -> hikari.Message | None:
         try:
-            msg = await message.edit(new_content)
+            msg = await message.edit(new_content, user_mentions=True)
             logger.info(f"Edited announcement in guild {guild_id}")
             return msg
         except Exception as e:
