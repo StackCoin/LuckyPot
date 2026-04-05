@@ -59,6 +59,13 @@ def init_database():
 
         CREATE INDEX IF NOT EXISTS idx_user_bans_lookup
             ON user_bans(discord_id, guild_id, expires_at);
+
+        CREATE TABLE IF NOT EXISTS auto_enter_users (
+            discord_id TEXT NOT NULL,
+            guild_id   TEXT NOT NULL,
+            enabled_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (discord_id, guild_id)
+        );
     """)
     conn.commit()
     conn.close()
@@ -277,3 +284,38 @@ def set_last_event_id(conn, event_id: int) -> None:
         (str(event_id),),
     )
     conn.commit()
+
+
+def set_auto_enter(conn, discord_id: str, guild_id: str, enabled: bool) -> None:
+    """Opt a user in or out of auto-enter for a guild."""
+    if enabled:
+        conn.execute(
+            """INSERT INTO auto_enter_users (discord_id, guild_id)
+               VALUES (?, ?)
+               ON CONFLICT(discord_id, guild_id) DO NOTHING""",
+            (discord_id, guild_id),
+        )
+    else:
+        conn.execute(
+            "DELETE FROM auto_enter_users WHERE discord_id = ? AND guild_id = ?",
+            (discord_id, guild_id),
+        )
+    conn.commit()
+
+
+def get_auto_enter_users(conn, guild_id: str) -> list[str]:
+    """Return discord_ids of all opted-in users for a guild."""
+    cursor = conn.execute(
+        "SELECT discord_id FROM auto_enter_users WHERE guild_id = ?",
+        (guild_id,),
+    )
+    return [row["discord_id"] for row in cursor.fetchall()]
+
+
+def get_auto_enter_status(conn, discord_id: str, guild_id: str) -> bool:
+    """Return True if the user is opted in to auto-enter for this guild."""
+    cursor = conn.execute(
+        "SELECT 1 FROM auto_enter_users WHERE discord_id = ? AND guild_id = ?",
+        (discord_id, guild_id),
+    )
+    return cursor.fetchone() is not None
