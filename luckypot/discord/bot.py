@@ -48,13 +48,15 @@ def _get_guild_channel(bot: hikari.GatewayBot, guild_id: str):
 
 
 def make_announce_fn(bot: hikari.GatewayBot):
-    async def announce(guild_id: str, message: str) -> hikari.Message | None:
+    async def announce(
+        guild_id: str, message: str, user_mentions: bool = True
+    ) -> hikari.Message | None:
         try:
             channel, channel_id = await _get_guild_channel(bot, guild_id)
             if channel is None:
                 return None
 
-            msg = await channel.send(message, user_mentions=True)
+            msg = await channel.send(message, user_mentions=user_mentions)
             logger.info(f"Announced to guild {guild_id} channel {channel_id}")
             return msg
         except Exception as e:

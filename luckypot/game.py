@@ -470,8 +470,10 @@ async def on_request_accepted(
                     if pot:
                         participants = db.get_pot_participants(conn, pot["pot_id"])
                         total_pot = sum(p["amount"] for p in participants)
-                    await announce_fn(
-                        f"<@{discord_id}> entered the pot! The pot is now at {total_pot} STK. Use `/enter-pot` to enter!"
+                    await announce(
+                        guild_id,
+                        f"<@{discord_id}> entered the pot! The pot is now at {total_pot} STK. Use `/enter-pot` to enter!",
+                        user_mentions=False,
                     )
             else:
                 logger.warning(
