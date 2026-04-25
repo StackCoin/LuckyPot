@@ -9,7 +9,10 @@ wheels/
 
 .env
 *.db
+*.db-shm
+*.db-wal
 *.log
+data/
 
 tmp
 PLAN.md

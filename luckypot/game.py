@@ -129,7 +129,11 @@ async def enter_pot(
                 }
 
             stk_user_id = stk_user["id"]
-            idempotency_key = f"pot_entry:{pot_id}:{discord_id}"
+            prior_attempts = conn.execute(
+                "SELECT COUNT(*) AS count FROM pot_entries WHERE pot_id = ? AND discord_id = ?",
+                (pot_id, discord_id),
+            ).fetchone()["count"]
+            idempotency_key = f"pot_entry:{pot_id}:{discord_id}:{prior_attempts + 1}"
             req = await stk.create_request(
                 to_user_id=stk_user_id,
                 amount=POT_ENTRY_COST,
@@ -144,13 +148,23 @@ async def enter_pot(
 
             request_id = str(req["request_id"])
 
-            entry_id = db.add_entry(
-                conn,
-                pot_id=pot_id,
-                discord_id=discord_id,
-                amount=POT_ENTRY_COST,
-                stackcoin_request_id=request_id,
-            )
+            try:
+                entry_id = db.add_entry(
+                    conn,
+                    pot_id=pot_id,
+                    discord_id=discord_id,
+                    amount=POT_ENTRY_COST,
+                    stackcoin_request_id=request_id,
+                )
+            except Exception:
+                await stk.deny_request(int(request_id))
+                logger.exception(
+                    f"Failed to persist entry for request_id={request_id}; denied remote request"
+                )
+                return {
+                    "status": "error",
+                    "message": "Failed to record your pot entry. The StackCoin request was cancelled; please try again.",
+                }
 
             return {
                 "status": "pending",
@@ -171,11 +185,11 @@ def select_random_winner(participants: list[dict]) -> dict | None:
     if not participants:
         return None
 
-    total_weight = sum(p["amount"] for p in participants)
+    total_weight = sum(max(p["amount"], POT_ENTRY_COST) for p in participants)
     roll = random.uniform(0, total_weight)
     cumulative = 0
     for p in participants:
-        cumulative += p["amount"]
+        cumulative += max(p["amount"], POT_ENTRY_COST)
         if roll <= cumulative:
             return p
     return participants[-1]
@@ -461,7 +475,26 @@ async def on_request_accepted(
             discord_id = entry["discord_id"]
             announce_fn = partial(announce, guild_id) if announce else None
 
-            if entry["status"] == "pending":
+            if entry["status"] == "pending" and not entry["pot_is_active"]:
+                refunded = await send_winnings_to_user(
+                    discord_id,
+                    entry["amount"],
+                    idempotency_key=f"pot_refund:{request_id}",
+                )
+                if refunded:
+                    db.deny_entry(conn, entry_id)
+                    logger.info(
+                        f"Entry {entry_id} refunded for discord_id={discord_id}; pot already ended"
+                    )
+                    if announce_fn:
+                        await announce_fn(
+                            f"<@{discord_id}>'s late pot payment was refunded because that pot already ended."
+                        )
+                else:
+                    logger.error(
+                        f"Failed to refund late accepted entry {entry_id} for discord_id={discord_id}"
+                    )
+            elif entry["status"] == "pending":
                 db.confirm_entry(conn, entry_id)
                 logger.info(f"Entry {entry_id} confirmed for discord_id={discord_id}")
                 if announce_fn:

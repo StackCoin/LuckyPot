@@ -148,7 +148,7 @@ def get_entry_by_id(conn, entry_id: int) -> dict | None:
 def get_entry_by_request_id(conn, request_id: str) -> dict | None:
     """Get a pot entry by its StackCoin request ID, including pot guild_id."""
     cursor = conn.execute(
-        """SELECT pe.*, p.guild_id AS pot_guild_id
+        """SELECT pe.*, p.guild_id AS pot_guild_id, p.is_active AS pot_is_active
            FROM pot_entries pe
            JOIN pots p ON pe.pot_id = p.pot_id
            WHERE pe.stackcoin_request_id = ?""",

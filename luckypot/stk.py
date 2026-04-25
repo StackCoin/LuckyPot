@@ -141,6 +141,16 @@ async def create_request(
         return None
 
 
+async def deny_request(request_id: int) -> bool:
+    """Deny a payment request. Returns True if the request was denied."""
+    try:
+        result = await get_client().deny_request(request_id=request_id)
+        return result.success is True
+    except stackcoin.StackCoinError as e:
+        logger.error(f"Failed to deny request {request_id}: {e}")
+        return False
+
+
 async def get_request(request_id: int) -> dict | None:
     """Get a request by ID."""
     try:

@@ -28,6 +28,7 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
             discord_id = str(ctx.user.id)
 
             try:
+                await ctx.defer(ephemeral=True)
                 guild_announce = partial(announce, guild_id)
                 result = await enter_pot(
                     discord_id, guild_id, announce_fn=guild_announce
