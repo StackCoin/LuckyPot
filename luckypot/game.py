@@ -203,7 +203,7 @@ async def send_winnings_to_user(
     if bot_balance is None:
         logger.error("Could not check bot balance")
         return False
-    if bot_balance < amount:
+    if bot_balance < amount and idempotency_key is None:
         logger.error(
             f"Bot balance ({bot_balance}) insufficient to pay {amount} STK to {winner_discord_id}"
         )
@@ -249,7 +249,20 @@ async def process_pot_win(
         winner_id, winning_amount, idempotency_key=idempotency_key
     )
     if sent:
-        db.end_pot(conn, pot["pot_id"], winner_id, winning_amount, win_type)
+        try:
+            db.end_pot(conn, pot["pot_id"], winner_id, winning_amount, win_type)
+        except Exception:
+            # STK send already succeeded (idempotent). Retry the local write once
+            # with a fresh connection so a transient SQLite error doesn't leave
+            # the pot active while money has already been sent.
+            logger.exception(
+                f"end_pot failed after payout for pot #{pot['pot_id']}; retrying once"
+            )
+            retry_conn = db.get_connection()
+            try:
+                db.end_pot(retry_conn, pot["pot_id"], winner_id, winning_amount, win_type)
+            finally:
+                retry_conn.close()
         logger.info(
             f"Pot #{pot['pot_id']} won by {winner_id} for {winning_amount} STK ({win_type})"
         )

@@ -43,10 +43,15 @@ def init_database():
 
         CREATE INDEX IF NOT EXISTS idx_pots_guild_active
             ON pots(guild_id, is_active);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pots_one_active_per_guild
+            ON pots(guild_id) WHERE is_active = TRUE;
         CREATE INDEX IF NOT EXISTS idx_pot_entries_pot_id
             ON pot_entries(pot_id);
         CREATE INDEX IF NOT EXISTS idx_pot_entries_request_id
             ON pot_entries(stackcoin_request_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pot_entries_active_request_id_unique
+            ON pot_entries(stackcoin_request_id)
+            WHERE stackcoin_request_id IS NOT NULL AND status IN ('pending', 'confirmed');
 
         CREATE TABLE IF NOT EXISTS user_bans (
             ban_id INTEGER PRIMARY KEY AUTOINCREMENT,
