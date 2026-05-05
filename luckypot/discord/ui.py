@@ -152,6 +152,53 @@ def build_auto_enter_opted_out() -> ContainerComponentBuilder:
     return container
 
 
+def build_entry_confirmed() -> ContainerComponentBuilder:
+    """Entry confirmed via preauth."""
+    container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
+    container.add_text_display("✅ Entry Confirmed!")
+    container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+    container.add_text_display(
+        "Your entry has been confirmed! 5 STK was automatically deducted via your preauthorization."
+    )
+    return container
+
+
+def build_auto_enter_opted_in_with_preauth() -> ContainerComponentBuilder:
+    """Auto-enter enabled with active preauth."""
+    container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
+    container.add_text_display("✅ Auto-Enter Enabled")
+    container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+    container.add_text_display(
+        "You will automatically enter each new pot when one starts.\n\n"
+        "Automatic payments are active — entries will be confirmed instantly!"
+    )
+    return container
+
+
+def build_auto_enter_opted_in_pending_preauth() -> ContainerComponentBuilder:
+    """Auto-enter enabled, preauth pending approval."""
+    container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
+    container.add_text_display("✅ Auto-Enter Enabled")
+    container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+    container.add_text_display(
+        "You will automatically enter each new pot when one starts.\n\n"
+        "Check your DMs from StackCoin to approve automatic payments for seamless entries."
+    )
+    return container
+
+
+def build_auto_enter_opted_in_preauth_requested() -> ContainerComponentBuilder:
+    """Auto-enter enabled, preauth just requested."""
+    container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
+    container.add_text_display("✅ Auto-Enter Enabled")
+    container.add_separator(divider=True, spacing=hikari.SpacingType.SMALL)
+    container.add_text_display(
+        "You will automatically enter each new pot when one starts.\n\n"
+        "Check your DMs from StackCoin to approve automatic payments for seamless entries."
+    )
+    return container
+
+
 def build_auto_enter_already_in_state(enabled: bool) -> ContainerComponentBuilder:
     """Build response when user is already in the requested state."""
     container = ContainerComponentBuilder(accent_color=BRAND_COLOR)

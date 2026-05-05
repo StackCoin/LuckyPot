@@ -114,27 +114,62 @@ async def send_stk(
         return None
 
 
+async def create_preauth(
+    user_id: int,
+    max_amount: int,
+    window_hours: int,
+) -> dict | None:
+    """Request a preauthorization from a user."""
+    try:
+        return await get_client().create_preauth(
+            user_id=user_id,
+            max_amount=max_amount,
+            window_hours=window_hours,
+        )
+    except stackcoin.StackCoinError as e:
+        logger.error(f"Failed to create preauth for user {user_id}: {e}")
+        return None
+
+
+async def get_preauths(user_id: int | None = None) -> list[dict]:
+    """List preauths for this bot."""
+    try:
+        return await get_client().get_preauths(user_id=user_id)
+    except stackcoin.StackCoinError as e:
+        logger.error(f"Failed to get preauths: {e}")
+        return []
+
+
 async def create_request(
     to_user_id: int,
     amount: int,
     label: str | None = None,
     idempotency_key: str | None = None,
+    use_preauth: bool = False,
 ) -> dict | None:
-    """Create a payment request. Returns response dict or None on failure."""
+    """Create a payment request. Returns response dict or None on failure.
+
+    Raises StackCoinError for preauth_limit_exceeded so callers can handle it.
+    """
     try:
         result = await get_client().create_request(
             to_user_id=to_user_id,
             amount=amount,
             label=label,
             idempotency_key=idempotency_key,
+            use_preauth=use_preauth,
         )
         return {
             "success": result.success,
             "request_id": result.request_id,
             "amount": result.amount,
             "status": result.status,
+            "transaction_id": result.transaction_id,
         }
     except stackcoin.StackCoinError as e:
+        error_str = str(e).lower()
+        if "preauth_limit_exceeded" in error_str:
+            raise
         logger.error(
             f"Failed to create request for {amount} STK from user {to_user_id}: {e}"
         )

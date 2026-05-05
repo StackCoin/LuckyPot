@@ -57,6 +57,17 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                     await ctx.respond(
                         components=[container], flags=hikari.MessageFlag.EPHEMERAL
                     )
+                elif status == "confirmed":
+                    container = ui.build_entry_confirmed()
+                    await ctx.respond(
+                        components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                    )
+                elif status == "skipped":
+                    message = result.get("message", "Entry skipped.")
+                    container = ui.build_entry_error(message)
+                    await ctx.respond(
+                        components=[container], flags=hikari.MessageFlag.EPHEMERAL
+                    )
                 elif status == "already_entered":
                     container = ui.build_entry_already_entered()
                     await ctx.respond(
@@ -171,7 +182,30 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                     conn.close()
 
                 if self.enabled:
-                    container = ui.build_auto_enter_opted_in()
+                    # Check/request preauth for seamless auto-enter
+                    from luckypot import stk as stk_mod
+                    stk_user = await stk_mod.get_user_by_discord_id(discord_id)
+                    if stk_user:
+                        preauths = await stk_mod.get_preauths(user_id=stk_user["id"])
+                        active = [p for p in preauths if p.get("status") == "active"]
+                        pending = [p for p in preauths if p.get("status") == "pending"]
+
+                        if active:
+                            container = ui.build_auto_enter_opted_in_with_preauth()
+                        elif pending:
+                            container = ui.build_auto_enter_opted_in_pending_preauth()
+                        else:
+                            result = await stk_mod.create_preauth(
+                                user_id=stk_user["id"],
+                                max_amount=10,
+                                window_hours=24,
+                            )
+                            if result:
+                                container = ui.build_auto_enter_opted_in_preauth_requested()
+                            else:
+                                container = ui.build_auto_enter_opted_in()
+                    else:
+                        container = ui.build_auto_enter_opted_in()
                 else:
                     container = ui.build_auto_enter_opted_out()
                 await ctx.respond(

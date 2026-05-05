@@ -4,6 +4,7 @@ from collections import defaultdict
 from functools import partial
 from typing import Any, Callable, Awaitable
 
+import stackcoin
 from loguru import logger
 from luckypot import db, stk
 from luckypot.config import settings
@@ -134,12 +135,19 @@ async def enter_pot(
                 (pot_id, discord_id),
             ).fetchone()["count"]
             idempotency_key = f"pot_entry:{pot_id}:{discord_id}:{prior_attempts + 1}"
-            req = await stk.create_request(
-                to_user_id=stk_user_id,
-                amount=POT_ENTRY_COST,
-                label=f"LuckyPot entry (pot #{pot_id})",
-                idempotency_key=idempotency_key,
-            )
+            try:
+                req = await stk.create_request(
+                    to_user_id=stk_user_id,
+                    amount=POT_ENTRY_COST,
+                    label=f"LuckyPot entry (pot #{pot_id})",
+                    idempotency_key=idempotency_key,
+                    use_preauth=True,
+                )
+            except stackcoin.StackCoinError:
+                return {
+                    "status": "skipped",
+                    "message": "Auto-payment limit reached or insufficient balance.",
+                }
             if req is None:
                 return {
                     "status": "error",
@@ -164,6 +172,25 @@ async def enter_pot(
                 return {
                     "status": "error",
                     "message": "Failed to record your pot entry. The StackCoin request was cancelled; please try again.",
+                }
+
+            # If preauth resolved the request instantly, confirm the entry now
+            if req.get("status") == "accepted":
+                db.confirm_entry(conn, entry_id)
+                if announce_fn:
+                    pot = db.get_active_pot(conn, guild_id)
+                    total_pot = 0
+                    if pot:
+                        participants = db.get_pot_participants(conn, pot["pot_id"])
+                        total_pot = sum(p["amount"] for p in participants)
+                    await announce_fn(
+                        f"<@{discord_id}> entered the pot! The pot is now at {total_pot} STK. Use `/enter-pot` to enter!"
+                    )
+                return {
+                    "status": "confirmed",
+                    "entry_id": entry_id,
+                    "request_id": request_id,
+                    "message": f"Entry confirmed! {POT_ENTRY_COST} STK was automatically deducted.",
                 }
 
             return {
