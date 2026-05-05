@@ -171,18 +171,16 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                 conn = db.get_connection()
                 try:
                     current = db.get_auto_enter_status(conn, discord_id, guild_id)
-                    if current == self.enabled:
-                        container = ui.build_auto_enter_already_in_state(self.enabled)
-                        await ctx.respond(
-                            components=[container], flags=hikari.MessageFlag.EPHEMERAL
-                        )
-                        return
-                    db.set_auto_enter(conn, discord_id, guild_id, self.enabled)
+                    already_opted_in = current == self.enabled
+                    if not already_opted_in:
+                        db.set_auto_enter(conn, discord_id, guild_id, self.enabled)
                 finally:
                     conn.close()
 
                 if self.enabled:
-                    # Check/request preauth for seamless auto-enter
+                    # Check/request preauth for seamless auto-enter.
+                    # Always check preauth status even if already opted in,
+                    # because the user may have revoked their preauth since.
                     from luckypot import stk as stk_mod
                     stk_user = await stk_mod.get_user_by_discord_id(discord_id)
                     if stk_user:
@@ -206,6 +204,8 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                                 container = ui.build_auto_enter_opted_in()
                     else:
                         container = ui.build_auto_enter_opted_in()
+                elif already_opted_in:
+                    container = ui.build_auto_enter_already_in_state(False)
                 else:
                     container = ui.build_auto_enter_opted_out()
                 await ctx.respond(
