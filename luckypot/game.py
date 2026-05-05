@@ -470,6 +470,69 @@ async def daily_pot_draw(
                 conn.close()
 
 
+# ── TEMPORARY: preauth migration for existing auto-enter users ──────────
+# Remove this function and its call in lucky_pot.py once all existing
+# auto-enter users have been sent preauth requests.
+
+
+async def backfill_preauths_for_auto_enter_users() -> None:
+    """Request preauths for existing auto-enter users who don't have one yet.
+
+    TEMPORARY — safe to remove after rollout once preauths have been sent.
+    """
+    conn = db.get_connection()
+    try:
+        all_users = db.get_all_auto_enter_users(conn)
+    finally:
+        conn.close()
+
+    if not all_users:
+        logger.info("Preauth backfill: no auto-enter users found")
+        return
+
+    # Deduplicate by discord_id (a user may be auto-entered in multiple guilds,
+    # but preauths are per-user not per-guild)
+    seen: set[str] = set()
+    unique_users: list[str] = []
+    for entry in all_users:
+        if entry["discord_id"] not in seen:
+            seen.add(entry["discord_id"])
+            unique_users.append(entry["discord_id"])
+
+    logger.info(f"Preauth backfill: checking {len(unique_users)} auto-enter user(s)")
+    requested = 0
+
+    for discord_id in unique_users:
+        try:
+            stk_user = await stk.get_user_by_discord_id(discord_id)
+            if stk_user is None:
+                continue
+
+            preauths = await stk.get_preauths(user_id=stk_user["id"])
+            has_active_or_pending = any(
+                p.get("status") in ("active", "pending") for p in preauths
+            )
+            if has_active_or_pending:
+                continue
+
+            result = await stk.create_preauth(
+                user_id=stk_user["id"],
+                max_amount=10,
+                window_hours=24,
+            )
+            if result:
+                requested += 1
+                logger.info(
+                    f"Preauth backfill: requested preauth for discord_id={discord_id} (user {stk_user['id']})"
+                )
+        except Exception:
+            logger.exception(
+                f"Preauth backfill: failed for discord_id={discord_id}"
+            )
+
+    logger.info(f"Preauth backfill: done, requested {requested} new preauth(s)")
+
+
 async def on_request_accepted(
     event_data: RequestAcceptedData, announce: RawAnnounceFn = None
 ):
