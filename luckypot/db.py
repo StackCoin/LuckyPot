@@ -320,12 +320,6 @@ def get_auto_enter_users(conn, guild_id: str) -> list[str]:
     return [row["discord_id"] for row in cursor.fetchall()]
 
 
-def get_all_auto_enter_users(conn) -> list[dict]:
-    """Return all auto-enter users across all guilds."""
-    cursor = conn.execute("SELECT discord_id, guild_id FROM auto_enter_users")
-    return [{"discord_id": row["discord_id"], "guild_id": row["guild_id"]} for row in cursor.fetchall()]
-
-
 def get_auto_enter_status(conn, discord_id: str, guild_id: str) -> bool:
     """Return True if the user is opted in to auto-enter for this guild."""
     cursor = conn.execute(

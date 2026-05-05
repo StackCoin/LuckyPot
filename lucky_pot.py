@@ -5,7 +5,7 @@ from loguru import logger
 from luckypot import db
 from luckypot.config import settings
 import stackcoin
-from luckypot.game import on_request_accepted, on_request_denied, backfill_preauths_for_auto_enter_users
+from luckypot.game import on_request_accepted, on_request_denied
 from luckypot import stk
 from luckypot.stk import get_client as get_stk_client
 from luckypot.discord.bot import (
@@ -86,14 +86,6 @@ async def on_started(_event: hikari.StartedEvent) -> None:
     gateway_task.add_done_callback(_task_done_callback)
     background_tasks.append(gateway_task)
     logger.info("StackCoin gateway started")
-
-    # TEMPORARY: backfill preauths for existing auto-enter users.
-    # Remove once all users have been sent preauth requests.
-    backfill_task = asyncio.create_task(
-        backfill_preauths_for_auto_enter_users(),
-        name="preauth-backfill",
-    )
-    backfill_task.add_done_callback(_task_done_callback)
 
     draw_task = asyncio.create_task(
         run_daily_draw_loop(
