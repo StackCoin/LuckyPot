@@ -68,16 +68,6 @@ async def get_user_by_discord_id(discord_id: str) -> dict | None:
         return None
 
 
-async def get_bot_user() -> dict | None:
-    """Get the bot's own StackCoin user profile."""
-    try:
-        user = await get_client().get_me()
-        return {"id": user.id, "username": user.username, "balance": user.balance}
-    except stackcoin.StackCoinError as e:
-        logger.error(f"Failed to get bot user: {e}")
-        return None
-
-
 async def get_bot_balance() -> int | None:
     """Get the bot's current STK balance."""
     try:
@@ -140,15 +130,6 @@ async def get_preauths(user_id: int | None = None) -> list[dict]:
         return []
 
 
-async def revoke_preauth(preauth_id: int) -> dict | None:
-    """Revoke a preauthorization."""
-    try:
-        return await get_client().revoke_preauth(preauth_id=preauth_id)
-    except stackcoin.StackCoinError as e:
-        logger.error(f"Failed to revoke preauth {preauth_id}: {e}")
-        return None
-
-
 async def create_request(
     to_user_id: int,
     amount: int,
@@ -193,20 +174,6 @@ async def deny_request(request_id: int) -> bool:
     except stackcoin.StackCoinError as e:
         logger.error(f"Failed to deny request {request_id}: {e}")
         return False
-
-
-async def get_request(request_id: int) -> dict | None:
-    """Get a request by ID."""
-    try:
-        req = await get_client().get_request(request_id=request_id)
-        return {
-            "id": req.id,
-            "amount": req.amount,
-            "status": req.status,
-        }
-    except stackcoin.StackCoinError as e:
-        logger.error(f"Failed to get request {request_id}: {e}")
-        return None
 
 
 async def get_guild_channel(guild_id: str) -> str | None:
