@@ -140,6 +140,15 @@ async def get_preauths(user_id: int | None = None) -> list[dict]:
         return []
 
 
+async def revoke_preauth(preauth_id: int) -> dict | None:
+    """Revoke a preauthorization."""
+    try:
+        return await get_client().revoke_preauth(preauth_id=preauth_id)
+    except stackcoin.StackCoinError as e:
+        logger.error(f"Failed to revoke preauth {preauth_id}: {e}")
+        return None
+
+
 async def create_request(
     to_user_id: int,
     amount: int,
