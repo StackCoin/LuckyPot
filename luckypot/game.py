@@ -1,5 +1,5 @@
 import asyncio
-import random
+import secrets
 from collections import defaultdict
 from functools import partial
 from typing import Any, Callable, Awaitable
@@ -12,7 +12,7 @@ from stackcoin import RequestAcceptedData, RequestDeniedData
 
 POT_ENTRY_COST = 5
 DAILY_DRAW_CHANCE = 0.95
-RANDOM_WIN_CHANCE = 0.025
+RANDOM_WIN_CHANCE = 0.01
 AUTO_ENTER_DELAY_SECONDS = 30
 
 # Per-guild lock to serialize pot mutations (entries, instant wins, draws).
@@ -80,7 +80,7 @@ async def enter_pot(
             # Roll for instant win BEFORE creating a payment request.
             # An instant win skips payment entirely — the user wins the
             # current pot for free and the pot ends immediately.
-            if random.random() < RANDOM_WIN_CHANCE:
+            if secrets.randbelow(10000) < RANDOM_WIN_CHANCE * 10000:
                 participants = db.get_pot_participants(conn, pot_id)
                 total_pot = sum(p["amount"] for p in participants)
                 logger.info(
@@ -213,7 +213,7 @@ def select_random_winner(participants: list[dict]) -> dict | None:
         return None
 
     total_weight = sum(max(p["amount"], POT_ENTRY_COST) for p in participants)
-    roll = random.uniform(0, total_weight)
+    roll = secrets.randbelow(total_weight + 1)
     cumulative = 0
     for p in participants:
         cumulative += max(p["amount"], POT_ENTRY_COST)
@@ -436,10 +436,10 @@ async def daily_pot_draw(
         async with _guild_locks[guild_id]:
             conn = db.get_connection()
             try:
-                roll = random.random()
-                if roll < DAILY_DRAW_CHANCE:
+                roll = secrets.randbelow(10000)
+                if roll < DAILY_DRAW_CHANCE * 10000:
                     logger.info(
-                        f"Daily draw triggered for guild {guild_id} (roll={roll:.3f})"
+                        f"Daily draw triggered for guild {guild_id} (roll={roll}/10000)"
                     )
                     guild_announce = partial(announce, guild_id) if announce else None
                     guild_edit = (
