@@ -22,7 +22,8 @@ def init_database():
             ended_at TIMESTAMP,
             winner_discord_id TEXT,
             winning_amount INTEGER,
-            win_type TEXT
+            win_type TEXT,
+            current_round INTEGER NOT NULL DEFAULT 1
         );
 
         CREATE TABLE IF NOT EXISTS pot_entries (
@@ -33,6 +34,7 @@ def init_database():
             status TEXT NOT NULL DEFAULT 'pending',
             stackcoin_request_id TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            entry_round INTEGER NOT NULL DEFAULT 1,
             FOREIGN KEY (pot_id) REFERENCES pots(pot_id)
         );
 
@@ -52,6 +54,10 @@ def init_database():
         CREATE UNIQUE INDEX IF NOT EXISTS idx_pot_entries_active_request_id_unique
             ON pot_entries(stackcoin_request_id)
             WHERE stackcoin_request_id IS NOT NULL AND status IN ('pending', 'confirmed');
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_pot_entries_one_per_round
+            ON pot_entries(pot_id, discord_id, entry_round)
+            WHERE status IN ('pending', 'confirmed');
 
         CREATE TABLE IF NOT EXISTS user_bans (
             ban_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +83,41 @@ def init_database():
     """)
     conn.commit()
     conn.close()
+    _migrate_schema()
     logger.info("Database initialized")
+
+
+def _migrate_schema() -> None:
+    """Idempotently add new columns and indexes to existing databases.
+
+    SQLite's ``CREATE TABLE IF NOT EXISTS`` skips tables that already exist,
+    so columns added in a later release never make it into older prod
+    databases. This helper inspects ``PRAGMA table_info`` and runs
+    ``ALTER TABLE ... ADD COLUMN`` for any missing columns. Safe to run
+    on every boot.
+    """
+    conn = get_connection()
+    try:
+        pots_cols = {row["name"] for row in conn.execute("PRAGMA table_info(pots)")}
+        if "current_round" not in pots_cols:
+            conn.execute(
+                "ALTER TABLE pots ADD COLUMN current_round INTEGER NOT NULL DEFAULT 1"
+            )
+
+        entries_cols = {row["name"] for row in conn.execute("PRAGMA table_info(pot_entries)")}
+        if "entry_round" not in entries_cols:
+            conn.execute(
+                "ALTER TABLE pot_entries ADD COLUMN entry_round INTEGER NOT NULL DEFAULT 1"
+            )
+
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pot_entries_one_per_round "
+            "ON pot_entries(pot_id, discord_id, entry_round) "
+            "WHERE status IN ('pending', 'confirmed')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_active_pot(conn, guild_id: str) -> dict | None:
@@ -97,7 +137,12 @@ def create_pot(conn, guild_id: str) -> dict:
         (guild_id,),
     )
     conn.commit()
-    return {"pot_id": cursor.lastrowid, "guild_id": guild_id, "is_active": True}
+    return {
+        "pot_id": cursor.lastrowid,
+        "guild_id": guild_id,
+        "is_active": True,
+        "current_round": 1,
+    }
 
 
 def ensure_active_pot(conn, guild_id: str) -> dict:
@@ -125,6 +170,23 @@ def end_pot(
     conn.commit()
 
 
+def advance_pot_round(conn, pot_id: int) -> int:
+    """Bump a pot's current_round by 1 and return the new round number.
+
+    Called after a daily-draw roll misses, signalling that the pot is now
+    accepting entries for the next round.
+    """
+    conn.execute(
+        "UPDATE pots SET current_round = current_round + 1 WHERE pot_id = ?",
+        (pot_id,),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT current_round FROM pots WHERE pot_id = ?", (pot_id,)
+    ).fetchone()
+    return row["current_round"]
+
+
 def add_entry(
     conn,
     pot_id: int,
@@ -132,12 +194,18 @@ def add_entry(
     amount: int,
     stackcoin_request_id: str | None = None,
     status: str = "pending",
+    entry_round: int = 1,
 ) -> int:
-    """Add an entry to a pot. Returns the entry_id."""
+    """Add an entry to a pot for a specific round. Returns the entry_id.
+
+    The ``(pot_id, discord_id, entry_round)`` triple is constrained unique by
+    ``idx_pot_entries_one_per_round`` for pending/confirmed entries.
+    """
     cursor = conn.execute(
-        """INSERT INTO pot_entries (pot_id, discord_id, amount, status, stackcoin_request_id)
-           VALUES (?, ?, ?, ?, ?)""",
-        (pot_id, discord_id, amount, status, stackcoin_request_id),
+        """INSERT INTO pot_entries
+             (pot_id, discord_id, amount, status, stackcoin_request_id, entry_round)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (pot_id, discord_id, amount, status, stackcoin_request_id, entry_round),
     )
     conn.commit()
     return cursor.lastrowid
@@ -242,12 +310,18 @@ def get_pot_status(conn, guild_id: str) -> dict:
     }
 
 
-def has_user_entered(conn, pot_id: int, discord_id: str) -> bool:
-    """Check if a user has already entered the active pot."""
+def has_user_entered(conn, pot_id: int, discord_id: str, entry_round: int) -> bool:
+    """Check if a user has already entered the given round of the pot.
+
+    The ``(pot_id, discord_id, entry_round)`` triple is constrained unique by
+    ``idx_pot_entries_one_per_round`` for pending/confirmed entries, so this
+    query returns at most one row.
+    """
     cursor = conn.execute(
         """SELECT COUNT(*) as count FROM pot_entries
-           WHERE pot_id = ? AND discord_id = ? AND status IN ('pending', 'confirmed')""",
-        (pot_id, discord_id),
+           WHERE pot_id = ? AND discord_id = ? AND entry_round = ?
+           AND status IN ('pending', 'confirmed')""",
+        (pot_id, discord_id, entry_round),
     )
     return cursor.fetchone()["count"] > 0
 
