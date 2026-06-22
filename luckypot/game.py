@@ -61,6 +61,7 @@ async def enter_pot(
         try:
             pot = db.ensure_active_pot(conn, guild_id)
             pot_id = pot["pot_id"]
+            current_round = pot["current_round"]
 
             # Check for active ban before anything else
             active_ban = db.get_active_ban(conn, discord_id, guild_id)
@@ -71,7 +72,7 @@ async def enter_pot(
                     "message": f"You are banned from entering pots until {active_ban['expires_at']} UTC.",
                 }
 
-            if db.has_user_entered(conn, pot_id, discord_id):
+            if db.has_user_entered(conn, pot_id, discord_id, current_round):
                 return {
                     "status": "already_entered",
                     "message": "You have already entered this pot!",
@@ -122,6 +123,7 @@ async def enter_pot(
                     amount=0,
                     stackcoin_request_id=None,
                     status="confirmed",
+                    entry_round=current_round,
                 )
                 return {
                     "status": "instant_win_free_entry",
@@ -163,6 +165,7 @@ async def enter_pot(
                     discord_id=discord_id,
                     amount=POT_ENTRY_COST,
                     stackcoin_request_id=request_id,
+                    entry_round=current_round,
                 )
             except Exception:
                 await stk.deny_request(int(request_id))
@@ -455,17 +458,28 @@ async def daily_pot_draw(
                     logger.info(
                         f"Daily draw skipped for guild {guild_id} (roll={roll:.3f}, needed < {DAILY_DRAW_CHANCE})"
                     )
+                    pot = db.get_active_pot(conn, guild_id)
+                    if pot is None:
+                        continue
+                    new_round = db.advance_pot_round(conn, pot["pot_id"])
+                    participants = db.get_pot_participants(conn, pot["pot_id"])
+                    total = sum(p["amount"] for p in participants)
+                    entry_word = "entry" if len(participants) == 1 else "entries"
                     if announce:
-                        pot = db.get_active_pot(conn, guild_id)
-                        if pot:
-                            participants = db.get_pot_participants(conn, pot["pot_id"])
-                            total = sum(p["amount"] for p in participants)
-                            guild_announce = partial(announce, guild_id)
-                            await guild_announce(
-                                f"The daily draw was held, but no winner was chosen today. "
-                                f"The pot carries over with {total} STK from {len(participants)} "
-                                f"{'entry' if len(participants) == 1 else 'entries'}!"
-                            )
+                        guild_announce = partial(announce, guild_id)
+                        await guild_announce(
+                            f"No winner today, the pot carries over to round {new_round} "
+                            f"with {total} STK from {len(participants)} {entry_word}. "
+                            f"Use `/enter-pot` to add another {POT_ENTRY_COST} STK!"
+                        )
+                    # Fire-and-forget: re-enter opt-ins into the new round.
+                    # Scheduled via create_task so it runs after the guild lock
+                    # is released (enter_pot acquires the same lock).
+                    guild_announce = partial(announce, guild_id) if announce else None
+                    asyncio.create_task(
+                        _auto_enter_users(guild_id, announce_fn=guild_announce),
+                        name=f"auto-enter-round-{new_round}-{guild_id}",
+                    )
             finally:
                 conn.close()
 
