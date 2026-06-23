@@ -8,6 +8,7 @@ import stackcoin
 from loguru import logger
 from luckypot import db, stk
 from luckypot.config import settings
+from luckypot.types import EnterPotResult, InstantWinResult, PotEntryRow
 from stackcoin import RequestAcceptedData, RequestDeniedData
 
 POT_ENTRY_COST = 5
@@ -31,7 +32,7 @@ RawEditAnnounceFn = Callable[[str, Any, str], Awaitable[Any]] | None
 
 async def enter_pot(
     discord_id: str, guild_id: str, announce_fn: AnnounceFn = None
-) -> dict:
+) -> EnterPotResult:
     """Core pot entry logic.
 
     1. Looks up the user's StackCoin account by Discord ID.
@@ -173,7 +174,7 @@ async def enter_pot(
             conn.close()
 
 
-def select_random_winner(participants: list[dict]) -> dict | None:
+def select_random_winner(participants: list[PotEntryRow]) -> PotEntryRow | None:
     """Select a random winner from a list of participant entry dicts.
 
     Each participant has a `discord_id` and `amount` field. Selection is
@@ -198,7 +199,7 @@ async def maybe_process_instant_win(
     pot_id: int,
     winner_id: str,
     announce_fn: AnnounceFn = None,
-) -> dict | None:
+) -> InstantWinResult | None:
     """Roll and process an instant win after a paid entry is confirmed."""
     if secrets.randbelow(10000) >= RANDOM_WIN_CHANCE * 10000:
         return None

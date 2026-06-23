@@ -3,6 +3,7 @@ from hikari.impl.special_endpoints import ContainerComponentBuilder
 
 from luckypot import stk
 from luckypot.discord.scheduler import next_draw_time
+from luckypot.types import PotRow, PotStatus
 
 BRAND_COLOR = hikari.Color(0x7C3AED)
 
@@ -80,7 +81,7 @@ def build_entry_banned(expires_at: str) -> ContainerComponentBuilder:
     return container
 
 
-def build_pot_status(status: dict) -> ContainerComponentBuilder:
+def build_pot_status(status: PotStatus) -> ContainerComponentBuilder:
     """Build the pot status display."""
     if not status.get("active"):
         container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
@@ -101,7 +102,7 @@ def build_pot_status(status: dict) -> ContainerComponentBuilder:
     return container
 
 
-def build_pot_history(history: list[dict], page: int = 1) -> ContainerComponentBuilder:
+def build_pot_history(history: list[PotRow], page: int = 1) -> ContainerComponentBuilder:
     """Build the pot history display."""
     container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
     header = "📜 Pot History" if page == 1 else f"📜 Pot History - Page {page}"
