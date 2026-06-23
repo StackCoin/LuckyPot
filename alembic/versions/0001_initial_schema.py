@@ -34,8 +34,12 @@ def upgrade() -> None:
         "pots",
         sa.Column("pot_id", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column("guild_id", sa.Text, nullable=False),
-        sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("TRUE")),
-        sa.Column("created_at", sa.TIMESTAMP, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "is_active", sa.Boolean, nullable=False, server_default=sa.text("TRUE")
+        ),
+        sa.Column(
+            "created_at", sa.TIMESTAMP, server_default=sa.text("CURRENT_TIMESTAMP")
+        ),
         sa.Column("ended_at", sa.TIMESTAMP, nullable=True),
         sa.Column("winner_discord_id", sa.Text, nullable=True),
         sa.Column("winning_amount", sa.Integer, nullable=True),
@@ -50,7 +54,9 @@ def upgrade() -> None:
         sa.Column("amount", sa.Integer, nullable=False),
         sa.Column("status", sa.Text, nullable=False, server_default="pending"),
         sa.Column("stackcoin_request_id", sa.Text, nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at", sa.TIMESTAMP, server_default=sa.text("CURRENT_TIMESTAMP")
+        ),
         sa.ForeignKeyConstraint(["pot_id"], ["pots.pot_id"]),
     )
 
@@ -66,7 +72,9 @@ def upgrade() -> None:
         sa.Column("discord_id", sa.Text, nullable=False),
         sa.Column("guild_id", sa.Text, nullable=False),
         sa.Column("reason", sa.Text, nullable=False),
-        sa.Column("banned_at", sa.TIMESTAMP, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "banned_at", sa.TIMESTAMP, server_default=sa.text("CURRENT_TIMESTAMP")
+        ),
         sa.Column("expires_at", sa.TIMESTAMP, nullable=False),
     )
 
@@ -74,7 +82,12 @@ def upgrade() -> None:
         "auto_enter_users",
         sa.Column("discord_id", sa.Text, nullable=False),
         sa.Column("guild_id", sa.Text, nullable=False),
-        sa.Column("enabled_at", sa.Text, nullable=False, server_default=sa.text("datetime('now')")),
+        sa.Column(
+            "enabled_at",
+            sa.Text,
+            nullable=False,
+            server_default=sa.text("datetime('now')"),
+        ),
         sa.PrimaryKeyConstraint("discord_id", "guild_id"),
     )
 
@@ -88,7 +101,9 @@ def upgrade() -> None:
         sqlite_where=sa.text("is_active = TRUE"),
     )
     op.create_index("idx_pot_entries_pot_id", "pot_entries", ["pot_id"])
-    op.create_index("idx_pot_entries_request_id", "pot_entries", ["stackcoin_request_id"])
+    op.create_index(
+        "idx_pot_entries_request_id", "pot_entries", ["stackcoin_request_id"]
+    )
     op.create_index(
         "idx_pot_entries_active_request_id_unique",
         "pot_entries",
@@ -98,16 +113,16 @@ def upgrade() -> None:
             "stackcoin_request_id IS NOT NULL AND status IN ('pending', 'confirmed')"
         ),
     )
-    op.create_index("idx_user_bans_lookup", "user_bans", ["discord_id", "guild_id", "expires_at"])
+    op.create_index(
+        "idx_user_bans_lookup", "user_bans", ["discord_id", "guild_id", "expires_at"]
+    )
     op.create_index("idx_auto_enter_guild", "auto_enter_users", ["guild_id"])
 
 
 def downgrade() -> None:
     op.drop_index("idx_auto_enter_guild", table_name="auto_enter_users")
     op.drop_index("idx_user_bans_lookup", table_name="user_bans")
-    op.drop_index(
-        "idx_pot_entries_active_request_id_unique", table_name="pot_entries"
-    )
+    op.drop_index("idx_pot_entries_active_request_id_unique", table_name="pot_entries")
     op.drop_index("idx_pot_entries_request_id", table_name="pot_entries")
     op.drop_index("idx_pot_entries_pot_id", table_name="pot_entries")
     op.drop_index("idx_pots_one_active_per_guild", table_name="pots")

@@ -75,10 +75,13 @@ async def _fetch_stackcoin_discord_id_or_die() -> str:
             last_exc = RuntimeError("fetch_stackcoin_discord_id returned None")
         except stackcoin.StackCoinError as e:
             last_exc = e
-        delay = min(
-            STACKCOIN_CONNECT_MAX_DELAY,
-            STACKCOIN_CONNECT_BASE_DELAY * (2 ** (attempt - 1)),
-        ) + random.random()
+        delay = (
+            min(
+                STACKCOIN_CONNECT_MAX_DELAY,
+                STACKCOIN_CONNECT_BASE_DELAY * (2 ** (attempt - 1)),
+            )
+            + random.random()
+        )
         logger.warning(
             f"StackCoin not ready (attempt {attempt}/"
             f"{STACKCOIN_CONNECT_MAX_ATTEMPTS}), retrying in {delay:.1f}s: "
