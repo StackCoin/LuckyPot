@@ -1,7 +1,10 @@
 import sqlite3
 from pathlib import Path
+from typing import cast
+
 from loguru import logger
 from luckypot.config import settings
+from luckypot.types import PotEntryRow, PotEntryWithPotRow, PotRow, PotStatus, UserBanRow
 
 
 def get_connection() -> sqlite3.Connection:
@@ -78,17 +81,17 @@ def _stamp_legacy_db(db_path: Path) -> None:
     command.stamp(cfg, "0001_initial")
 
 
-def get_active_pot(conn, guild_id: str) -> dict | None:
+def get_active_pot(conn, guild_id: str) -> PotRow | None:
     """Get the active pot for a guild, or None if there isn't one."""
     cursor = conn.execute(
         "SELECT * FROM pots WHERE guild_id = ? AND is_active = TRUE",
         (guild_id,),
     )
     row = cursor.fetchone()
-    return dict(row) if row else None
+    return cast(PotRow, dict(row)) if row else None
 
 
-def create_pot(conn, guild_id: str) -> dict:
+def create_pot(conn, guild_id: str) -> PotRow:
     """Create a new active pot for a guild."""
     cursor = conn.execute(
         "INSERT INTO pots (guild_id) VALUES (?)",
@@ -103,7 +106,7 @@ def create_pot(conn, guild_id: str) -> dict:
     }
 
 
-def ensure_active_pot(conn, guild_id: str) -> dict:
+def ensure_active_pot(conn, guild_id: str) -> PotRow:
     """Return the active pot for a guild, creating one if necessary."""
     pot = get_active_pot(conn, guild_id)
     if pot is None:
@@ -192,14 +195,14 @@ def add_entry(
     return cursor.lastrowid
 
 
-def get_entry_by_id(conn, entry_id: int) -> dict | None:
+def get_entry_by_id(conn, entry_id: int) -> PotEntryRow | None:
     """Get a pot entry by its ID."""
     cursor = conn.execute("SELECT * FROM pot_entries WHERE entry_id = ?", (entry_id,))
     row = cursor.fetchone()
-    return dict(row) if row else None
+    return cast(PotEntryRow, dict(row)) if row else None
 
 
-def get_entry_by_request_id(conn, request_id: str) -> dict | None:
+def get_entry_by_request_id(conn, request_id: str) -> PotEntryWithPotRow | None:
     """Get a pot entry by its StackCoin request ID, including pot guild_id."""
     cursor = conn.execute(
         """SELECT pe.*, p.guild_id AS pot_guild_id, p.is_active AS pot_is_active
@@ -209,7 +212,7 @@ def get_entry_by_request_id(conn, request_id: str) -> dict | None:
         (request_id,),
     )
     row = cursor.fetchone()
-    return dict(row) if row else None
+    return cast(PotEntryWithPotRow, dict(row)) if row else None
 
 
 def confirm_entry(conn, entry_id: int):
@@ -262,7 +265,7 @@ def ban_user(conn, discord_id: str, guild_id: str, reason: str, duration_hours: 
     conn.commit()
 
 
-def get_active_ban(conn, discord_id: str, guild_id: str) -> dict | None:
+def get_active_ban(conn, discord_id: str, guild_id: str) -> UserBanRow | None:
     """Get the active (non-expired) ban for a user in a guild, or None."""
     cursor = conn.execute(
         """SELECT * FROM user_bans
@@ -271,28 +274,28 @@ def get_active_ban(conn, discord_id: str, guild_id: str) -> dict | None:
         (discord_id, guild_id),
     )
     row = cursor.fetchone()
-    return dict(row) if row else None
+    return cast(UserBanRow, dict(row)) if row else None
 
 
-def get_confirmed_entries(conn, pot_id: int) -> list[dict]:
+def get_confirmed_entries(conn, pot_id: int) -> list[PotEntryRow]:
     """Get all confirmed entries for a pot."""
     cursor = conn.execute(
         "SELECT * FROM pot_entries WHERE pot_id = ? AND status = 'confirmed'",
         (pot_id,),
     )
-    return [dict(row) for row in cursor.fetchall()]
+    return [cast(PotEntryRow, dict(row)) for row in cursor.fetchall()]
 
 
-def get_pot_participants(conn, pot_id: int) -> list[dict]:
+def get_pot_participants(conn, pot_id: int) -> list[PotEntryRow]:
     """Get all confirmed entries for a pot (active participants)."""
     cursor = conn.execute(
         "SELECT * FROM pot_entries WHERE pot_id = ? AND status = 'confirmed'",
         (pot_id,),
     )
-    return [dict(row) for row in cursor.fetchall()]
+    return [cast(PotEntryRow, dict(row)) for row in cursor.fetchall()]
 
 
-def get_pot_status(conn, guild_id: str) -> dict:
+def get_pot_status(conn, guild_id: str) -> PotStatus:
     """Get the current pot status for a guild."""
     pot = get_active_pot(conn, guild_id)
     if pot is None:
@@ -338,7 +341,7 @@ def get_all_active_guilds(conn) -> list[str]:
 PAGE_SIZE = 5
 
 
-def get_pot_history(conn, guild_id: str, page: int = 1) -> list[dict]:
+def get_pot_history(conn, guild_id: str, page: int = 1) -> list[PotRow]:
     """Get paginated pot history for a guild.
 
     Returns up to PAGE_SIZE completed pots, ordered most-recent first.
@@ -351,7 +354,7 @@ def get_pot_history(conn, guild_id: str, page: int = 1) -> list[dict]:
            ORDER BY ended_at DESC LIMIT ? OFFSET ?""",
         (guild_id, PAGE_SIZE, offset),
     )
-    return [dict(row) for row in cursor.fetchall()]
+    return [cast(PotRow, dict(row)) for row in cursor.fetchall()]
 
 
 def get_last_event_id(conn) -> int:

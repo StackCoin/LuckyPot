@@ -8,6 +8,14 @@ import stackcoin
 from loguru import logger
 
 from luckypot.config import settings
+from typing import cast
+
+from luckypot.types import (
+    StackCoinPreauth,
+    StackCoinRequestResult,
+    StackCoinSendResult,
+    StackCoinUser,
+)
 
 _client: stackcoin.Client | None = None
 _stackcoin_discord_id: str | None = None
@@ -55,7 +63,7 @@ async def close_client() -> None:
         _client = None
 
 
-async def get_user_by_discord_id(discord_id: str) -> dict | None:
+async def get_user_by_discord_id(discord_id: str) -> StackCoinUser | None:
     """Look up a StackCoin user by their Discord ID."""
     try:
         users = await get_client().get_users(discord_id=discord_id)
@@ -83,7 +91,7 @@ async def send_stk(
     amount: int,
     label: str | None = None,
     idempotency_key: str | None = None,
-) -> dict | None:
+) -> StackCoinSendResult | None:
     """Send STK to a user. Returns response dict or None on failure."""
     try:
         result = await get_client().send(
@@ -108,23 +116,26 @@ async def create_preauth(
     user_id: int,
     max_amount: int,
     window_hours: int,
-) -> dict | None:
+) -> StackCoinPreauth | None:
     """Request a preauthorization from a user."""
     try:
-        return await get_client().create_preauth(
-            user_id=user_id,
-            max_amount=max_amount,
-            window_hours=window_hours,
+        return cast(
+            StackCoinPreauth,
+            await get_client().create_preauth(
+                user_id=user_id,
+                max_amount=max_amount,
+                window_hours=window_hours,
+            ),
         )
     except stackcoin.StackCoinError as e:
         logger.error(f"Failed to create preauth for user {user_id}: {e}")
         return None
 
 
-async def get_preauths(user_id: int | None = None) -> list[dict]:
+async def get_preauths(user_id: int | None = None) -> list[StackCoinPreauth]:
     """List preauths for this bot."""
     try:
-        return await get_client().get_preauths(user_id=user_id)
+        return cast(list[StackCoinPreauth], await get_client().get_preauths(user_id=user_id))
     except stackcoin.StackCoinError as e:
         logger.error(f"Failed to get preauths: {e}")
         return []
@@ -136,7 +147,7 @@ async def create_request(
     label: str | None = None,
     idempotency_key: str | None = None,
     use_preauth: bool = False,
-) -> dict | None:
+) -> StackCoinRequestResult | None:
     """Create a payment request. Returns response dict or None on failure.
 
     Raises StackCoinError for preauth_limit_exceeded so callers can handle it.
