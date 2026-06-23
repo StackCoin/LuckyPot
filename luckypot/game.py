@@ -39,11 +39,11 @@ async def enter_pot(
     3. Prevents duplicate entries.
     4. Creates a STK *request* (bot requests payment from the user).
     5. Records a pending entry in the local DB.
-    6. Rolls for an instant-win.
+    6. Rolls for an instant-win after payment is confirmed.
 
     Returns a result dict with at least a `status` key:
       - pending - request created, waiting for user to accept
-      - instant_win - user got an instant win (still needs payment confirmation)
+      - instant_win - user got an instant win after payment confirmation
       - already_entered - user is already in the pot
       - error - something went wrong (see ``message`` key)
     """
@@ -76,59 +76,6 @@ async def enter_pot(
                 return {
                     "status": "already_entered",
                     "message": "You have already entered this pot!",
-                }
-
-            # Roll for instant win BEFORE creating a payment request.
-            # An instant win skips payment entirely — the user wins the
-            # current pot for free and the pot ends immediately.
-            if secrets.randbelow(10000) < RANDOM_WIN_CHANCE * 10000:
-                participants = db.get_pot_participants(conn, pot_id)
-                total_pot = sum(p["amount"] for p in participants)
-                logger.info(
-                    f"Instant win rolled for discord_id={discord_id} in pot #{pot_id}"
-                )
-
-                if total_pot > 0:
-                    won = await process_pot_win(
-                        conn,
-                        guild_id=guild_id,
-                        winner_id=discord_id,
-                        winning_amount=total_pot,
-                        win_type="INSTANT WIN",
-                        announce_fn=announce_fn,
-                    )
-                    if won:
-                        return {
-                            "status": "instant_win",
-                            "winning_amount": total_pot,
-                            "message": f"You rolled an INSTANT WIN and won {total_pot} STK!",
-                        }
-                    else:
-                        return {
-                            "status": "error",
-                            "message": "You rolled an instant win but the payout failed. The pot remains active.",
-                        }
-                else:
-                    # Empty pot — nothing to win, treat as a free entry instead
-                    if announce_fn:
-                        await announce_fn(
-                            f"<@{discord_id}> rolled an instant win, but the pot is empty! They get a free entry instead."
-                        )
-
-                # Fall through to create a free confirmed entry (no payment)
-                entry_id = db.add_entry(
-                    conn,
-                    pot_id=pot_id,
-                    discord_id=discord_id,
-                    amount=0,
-                    stackcoin_request_id=None,
-                    status="confirmed",
-                    entry_round=current_round,
-                )
-                return {
-                    "status": "instant_win_free_entry",
-                    "entry_id": entry_id,
-                    "message": "You rolled an instant win on an empty pot — free entry!",
                 }
 
             stk_user_id = stk_user["id"]
@@ -179,7 +126,27 @@ async def enter_pot(
 
             # If preauth resolved the request instantly, confirm the entry now
             if req.get("status") == "accepted":
-                db.confirm_entry(conn, entry_id)
+                db.confirm_pending_entry(conn, entry_id)
+                instant_win = await maybe_process_instant_win(
+                    conn,
+                    guild_id=guild_id,
+                    pot_id=pot_id,
+                    winner_id=discord_id,
+                    announce_fn=announce_fn,
+                )
+                if instant_win:
+                    if instant_win["won"]:
+                        return {
+                            "status": "instant_win",
+                            "entry_id": entry_id,
+                            "request_id": request_id,
+                            "winning_amount": instant_win["winning_amount"],
+                            "message": f"Entry confirmed and you rolled an INSTANT WIN for {instant_win['winning_amount']} STK!",
+                        }
+                    return {
+                        "status": "error",
+                        "message": "Entry confirmed and instant win rolled, but the payout failed. The pot remains active.",
+                    }
                 if announce_fn:
                     pot = db.get_active_pot(conn, guild_id)
                     total_pot = 0
@@ -216,13 +183,42 @@ def select_random_winner(participants: list[dict]) -> dict | None:
         return None
 
     total_weight = sum(max(p["amount"], POT_ENTRY_COST) for p in participants)
-    roll = secrets.randbelow(total_weight + 1)
+    roll = secrets.randbelow(total_weight)
     cumulative = 0
     for p in participants:
         cumulative += max(p["amount"], POT_ENTRY_COST)
-        if roll <= cumulative:
+        if roll < cumulative:
             return p
     return participants[-1]
+
+
+async def maybe_process_instant_win(
+    conn,
+    guild_id: str,
+    pot_id: int,
+    winner_id: str,
+    announce_fn: AnnounceFn = None,
+) -> dict | None:
+    """Roll and process an instant win after a paid entry is confirmed."""
+    if secrets.randbelow(10000) >= RANDOM_WIN_CHANCE * 10000:
+        return None
+
+    participants = db.get_pot_participants(conn, pot_id)
+    total_pot = sum(p["amount"] for p in participants)
+    logger.info(f"Instant win rolled for discord_id={winner_id} in pot #{pot_id}")
+
+    if total_pot <= 0:
+        return {"won": False, "winning_amount": 0}
+
+    won = await process_pot_win(
+        conn,
+        guild_id=guild_id,
+        winner_id=winner_id,
+        winning_amount=total_pot,
+        win_type="INSTANT WIN",
+        announce_fn=announce_fn,
+    )
+    return {"won": won, "winning_amount": total_pot}
 
 
 async def send_winnings_to_user(
@@ -274,7 +270,11 @@ async def process_pot_win(
         logger.warning(f"No active pot found for guild {guild_id}")
         return False
 
-    idempotency_key = f"pot_win:{pot['pot_id']}:{winner_id}"
+    if not db.claim_pot_for_payout(conn, pot["pot_id"]):
+        logger.warning(f"Pot #{pot['pot_id']} was already claimed for payout")
+        return False
+
+    idempotency_key = f"pot_win:{pot['pot_id']}"
     sent = await send_winnings_to_user(
         winner_id, winning_amount, idempotency_key=idempotency_key
     )
@@ -291,6 +291,9 @@ async def process_pot_win(
             retry_conn = db.get_connection()
             try:
                 db.end_pot(retry_conn, pot["pot_id"], winner_id, winning_amount, win_type)
+            except Exception:
+                db.reopen_pot_after_failed_payout(retry_conn, pot["pot_id"])
+                raise
             finally:
                 retry_conn.close()
         logger.info(
@@ -307,6 +310,7 @@ async def process_pot_win(
         # is released by the time enter_pot() is called for opted-in users.
         asyncio.create_task(_auto_enter_users(guild_id, announce_fn=announce_fn))
     else:
+        db.reopen_pot_after_failed_payout(conn, pot["pot_id"])
         logger.error(f"Failed to send winnings to {winner_id}, pot remains active")
         if announce_fn:
             await announce_fn(
@@ -529,6 +533,13 @@ async def on_request_accepted(
             discord_id = entry["discord_id"]
             announce_fn = partial(announce, guild_id) if announce else None
 
+            if event_data.amount != entry["amount"]:
+                logger.warning(
+                    f"Request {request_id} accepted for {event_data.amount} STK, expected {entry['amount']} STK"
+                )
+                return
+
+            pot = db.get_active_pot(conn, guild_id)
             if entry["status"] == "pending" and not entry["pot_is_active"]:
                 refunded = await send_winnings_to_user(
                     discord_id,
@@ -536,7 +547,7 @@ async def on_request_accepted(
                     idempotency_key=f"pot_refund:{request_id}",
                 )
                 if refunded:
-                    db.deny_entry(conn, entry_id)
+                    db.deny_pending_entry(conn, entry_id)
                     logger.info(
                         f"Entry {entry_id} refunded for discord_id={discord_id}; pot already ended"
                     )
@@ -548,11 +559,44 @@ async def on_request_accepted(
                     logger.error(
                         f"Failed to refund late accepted entry {entry_id} for discord_id={discord_id}"
                     )
+            elif (
+                entry["status"] == "pending"
+                and pot is not None
+                and entry["entry_round"] != pot["current_round"]
+            ):
+                refunded = await send_winnings_to_user(
+                    discord_id,
+                    entry["amount"],
+                    idempotency_key=f"pot_refund:stale_round:{request_id}",
+                )
+                if refunded:
+                    db.deny_pending_entry(conn, entry_id)
+                    logger.info(
+                        f"Entry {entry_id} refunded for discord_id={discord_id}; accepted after round advanced"
+                    )
+                    if announce_fn:
+                        await announce_fn(
+                            f"<@{discord_id}>'s late pot payment was refunded because that round already closed."
+                        )
+                else:
+                    logger.error(
+                        f"Failed to refund stale-round accepted entry {entry_id} for discord_id={discord_id}"
+                    )
             elif entry["status"] == "pending":
-                db.confirm_entry(conn, entry_id)
+                if not db.confirm_pending_entry(conn, entry_id):
+                    logger.warning(f"Entry {entry_id} was no longer pending at confirm time")
+                    return
                 logger.info(f"Entry {entry_id} confirmed for discord_id={discord_id}")
+                instant_win = await maybe_process_instant_win(
+                    conn,
+                    guild_id=guild_id,
+                    pot_id=entry["pot_id"],
+                    winner_id=discord_id,
+                    announce_fn=announce_fn,
+                )
+                if instant_win:
+                    return
                 if announce_fn:
-                    pot = db.get_active_pot(conn, guild_id)
                     total_pot = 0
                     if pot:
                         participants = db.get_pot_participants(conn, pot["pot_id"])
@@ -599,11 +643,18 @@ async def on_request_denied(
     async with _guild_locks[guild_id]:
         conn = db.get_connection()
         try:
+            entry = db.get_entry_by_request_id(conn, request_id)
+            if entry is None:
+                return
             entry_id = entry["entry_id"]
             discord_id = entry["discord_id"]
             announce_fn = partial(announce, guild_id) if announce else None
 
-            db.deny_entry(conn, entry_id)
+            if not db.deny_pending_entry(conn, entry_id):
+                logger.warning(
+                    f"Request denied for entry {entry_id} in unexpected status: {entry['status']}"
+                )
+                return
             logger.info(f"Entry {entry_id} denied for discord_id={discord_id}")
             db.ban_user(
                 conn,
