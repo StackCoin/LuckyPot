@@ -70,7 +70,13 @@ async def get_user_by_discord_id(discord_id: str) -> StackCoinUser | None:
         if not users:
             return None
         user = users[0]
-        return {"id": user.id, "username": user.username, "balance": user.balance}
+        if user.id is None:
+            logger.error(f"StackCoin user for discord_id={discord_id} had no id")
+            return None
+        return cast(
+            StackCoinUser,
+            {"id": user.id, "username": user.username, "balance": user.balance},
+        )
     except stackcoin.StackCoinError as e:
         logger.error(f"Failed to look up user by discord_id={discord_id}: {e}")
         return None
@@ -135,7 +141,9 @@ async def create_preauth(
 async def get_preauths(user_id: int | None = None) -> list[StackCoinPreauth]:
     """List preauths for this bot."""
     try:
-        return cast(list[StackCoinPreauth], await get_client().get_preauths(user_id=user_id))
+        return cast(
+            list[StackCoinPreauth], await get_client().get_preauths(user_id=user_id)
+        )
     except stackcoin.StackCoinError as e:
         logger.error(f"Failed to get preauths: {e}")
         return []

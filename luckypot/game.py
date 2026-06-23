@@ -291,7 +291,9 @@ async def process_pot_win(
             )
             retry_conn = db.get_connection()
             try:
-                db.end_pot(retry_conn, pot["pot_id"], winner_id, winning_amount, win_type)
+                db.end_pot(
+                    retry_conn, pot["pot_id"], winner_id, winning_amount, win_type
+                )
             except Exception:
                 db.reopen_pot_after_failed_payout(retry_conn, pot["pot_id"])
                 raise
@@ -585,7 +587,9 @@ async def on_request_accepted(
                     )
             elif entry["status"] == "pending":
                 if not db.confirm_pending_entry(conn, entry_id):
-                    logger.warning(f"Entry {entry_id} was no longer pending at confirm time")
+                    logger.warning(
+                        f"Entry {entry_id} was no longer pending at confirm time"
+                    )
                     return
                 logger.info(f"Entry {entry_id} confirmed for discord_id={discord_id}")
                 instant_win = await maybe_process_instant_win(
@@ -602,10 +606,8 @@ async def on_request_accepted(
                     if pot:
                         participants = db.get_pot_participants(conn, pot["pot_id"])
                         total_pot = sum(p["amount"] for p in participants)
-                    await announce(
-                        guild_id,
-                        f"<@{discord_id}> entered the pot! The pot is now at {total_pot} STK. Use `/enter-pot` to enter!",
-                        user_mentions=False,
+                    await announce_fn(
+                        f"<@{discord_id}> entered the pot! The pot is now at {total_pot} STK. Use `/enter-pot` to enter!"
                     )
             else:
                 logger.warning(

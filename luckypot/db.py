@@ -4,7 +4,13 @@ from typing import cast
 
 from loguru import logger
 from luckypot.config import settings
-from luckypot.types import PotEntryRow, PotEntryWithPotRow, PotRow, PotStatus, UserBanRow
+from luckypot.types import (
+    PotEntryRow,
+    PotEntryWithPotRow,
+    PotRow,
+    PotStatus,
+    UserBanRow,
+)
 
 
 def get_connection() -> sqlite3.Connection:
@@ -36,7 +42,9 @@ def init_database():
     from alembic.config import Config
 
     cfg = Config()
-    cfg.set_main_option("script_location", str(Path(__file__).parent.parent / "alembic"))
+    cfg.set_main_option(
+        "script_location", str(Path(__file__).parent.parent / "alembic")
+    )
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
     command.upgrade(cfg, "head")
 
@@ -54,14 +62,20 @@ def _is_legacy_db(db_path: Path) -> bool:
         return False
     conn = sqlite3.connect(str(db_path))
     try:
-        has_alembic = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
-        ).fetchone() is not None
+        has_alembic = (
+            conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+            ).fetchone()
+            is not None
+        )
         if has_alembic:
             return False
-        has_pots = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='pots'"
-        ).fetchone() is not None
+        has_pots = (
+            conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='pots'"
+            ).fetchone()
+            is not None
+        )
         return has_pots
     finally:
         conn.close()
@@ -76,7 +90,9 @@ def _stamp_legacy_db(db_path: Path) -> None:
         f"Legacy pre-alembic database detected at {db_path}; stamping to 0001_initial"
     )
     cfg = Config()
-    cfg.set_main_option("script_location", str(Path(__file__).parent.parent / "alembic"))
+    cfg.set_main_option(
+        "script_location", str(Path(__file__).parent.parent / "alembic")
+    )
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
     command.stamp(cfg, "0001_initial")
 

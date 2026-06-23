@@ -182,6 +182,7 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                     # Always check preauth status even if already opted in,
                     # because the user may have revoked their preauth since.
                     from luckypot import stk as stk_mod
+
                     stk_user = await stk_mod.get_user_by_discord_id(discord_id)
                     if stk_user:
                         preauths = await stk_mod.get_preauths(user_id=stk_user["id"])
@@ -199,7 +200,9 @@ def register_commands(client: lightbulb.Client, bot: hikari.GatewayBot) -> None:
                                 window_hours=24,
                             )
                             if result:
-                                container = ui.build_auto_enter_opted_in_preauth_requested()
+                                container = (
+                                    ui.build_auto_enter_opted_in_preauth_requested()
+                                )
                             else:
                                 container = ui.build_auto_enter_opted_in()
                     else:

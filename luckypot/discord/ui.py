@@ -102,7 +102,9 @@ def build_pot_status(status: PotStatus) -> ContainerComponentBuilder:
     return container
 
 
-def build_pot_history(history: list[PotRow], page: int = 1) -> ContainerComponentBuilder:
+def build_pot_history(
+    history: list[PotRow], page: int = 1
+) -> ContainerComponentBuilder:
     """Build the pot history display."""
     container = ContainerComponentBuilder(accent_color=BRAND_COLOR)
     header = "📜 Pot History" if page == 1 else f"📜 Pot History - Page {page}"
