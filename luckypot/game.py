@@ -11,7 +11,7 @@ from luckypot.config import settings
 from stackcoin import RequestAcceptedData, RequestDeniedData
 
 POT_ENTRY_COST = 5
-DAILY_DRAW_CHANCE = 0.95
+DAILY_DRAW_CHANCE = 0.85
 RANDOM_WIN_CHANCE = 0.01
 AUTO_ENTER_DELAY_SECONDS = 30
 
