@@ -9,6 +9,7 @@ def get_connection() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -127,6 +128,29 @@ def end_pot(
     conn.commit()
 
 
+def claim_pot_for_payout(conn, pot_id: int) -> bool:
+    """Atomically mark an active pot inactive before attempting payout."""
+    cursor = conn.execute(
+        "UPDATE pots SET is_active = FALSE WHERE pot_id = ? AND is_active = TRUE",
+        (pot_id,),
+    )
+    conn.commit()
+    return cursor.rowcount == 1
+
+
+def reopen_pot_after_failed_payout(conn, pot_id: int) -> None:
+    """Reactivate a claimed pot when no payout was sent."""
+    conn.execute(
+        """UPDATE pots
+           SET is_active = TRUE
+           WHERE pot_id = ?
+             AND winner_discord_id IS NULL
+             AND ended_at IS NULL""",
+        (pot_id,),
+    )
+    conn.commit()
+
+
 def advance_pot_round(conn, pot_id: int) -> int:
     """Bump a pot's current_round by 1 and return the new round number.
 
@@ -190,20 +214,42 @@ def get_entry_by_request_id(conn, request_id: str) -> dict | None:
 
 def confirm_entry(conn, entry_id: int):
     """Mark an entry as confirmed (payment received)."""
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE pot_entries SET status = 'confirmed' WHERE entry_id = ?",
         (entry_id,),
     )
     conn.commit()
+    return cursor.rowcount == 1
+
+
+def confirm_pending_entry(conn, entry_id: int) -> bool:
+    """Mark a pending entry as confirmed. Returns True if changed."""
+    cursor = conn.execute(
+        "UPDATE pot_entries SET status = 'confirmed' WHERE entry_id = ? AND status = 'pending'",
+        (entry_id,),
+    )
+    conn.commit()
+    return cursor.rowcount == 1
 
 
 def deny_entry(conn, entry_id: int):
     """Mark an entry as denied (payment rejected)."""
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE pot_entries SET status = 'denied' WHERE entry_id = ?",
         (entry_id,),
     )
     conn.commit()
+    return cursor.rowcount == 1
+
+
+def deny_pending_entry(conn, entry_id: int) -> bool:
+    """Mark a pending entry as denied. Returns True if changed."""
+    cursor = conn.execute(
+        "UPDATE pot_entries SET status = 'denied' WHERE entry_id = ? AND status = 'pending'",
+        (entry_id,),
+    )
+    conn.commit()
+    return cursor.rowcount == 1
 
 
 def ban_user(conn, discord_id: str, guild_id: str, reason: str, duration_hours: int):
