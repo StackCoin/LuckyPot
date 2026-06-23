@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 from loguru import logger
 from luckypot.config import settings
 
@@ -12,112 +13,68 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_database():
-    conn = get_connection()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS pots (
-            pot_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild_id TEXT NOT NULL,
-            is_active BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            ended_at TIMESTAMP,
-            winner_discord_id TEXT,
-            winning_amount INTEGER,
-            win_type TEXT,
-            current_round INTEGER NOT NULL DEFAULT 1
-        );
+    """Initialize or migrate the database to the latest schema via alembic.
 
-        CREATE TABLE IF NOT EXISTS pot_entries (
-            entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pot_id INTEGER NOT NULL,
-            discord_id TEXT NOT NULL,
-            amount INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            stackcoin_request_id TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            entry_round INTEGER NOT NULL DEFAULT 1,
-            FOREIGN KEY (pot_id) REFERENCES pots(pot_id)
-        );
+    On a fresh database, all migrations run from the baseline.
 
-        CREATE TABLE IF NOT EXISTS gateway_state (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
+    On a legacy pre-alembic database (one that has the user tables but no
+    ``alembic_version`` table), the DB is stamped to the initial baseline
+    migration so migrations don't try to recreate tables; then any newer
+    migrations are applied normally.
+    """
+    db_path = Path(settings.db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        CREATE INDEX IF NOT EXISTS idx_pots_guild_active
-            ON pots(guild_id, is_active);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_pots_one_active_per_guild
-            ON pots(guild_id) WHERE is_active = TRUE;
-        CREATE INDEX IF NOT EXISTS idx_pot_entries_pot_id
-            ON pot_entries(pot_id);
-        CREATE INDEX IF NOT EXISTS idx_pot_entries_request_id
-            ON pot_entries(stackcoin_request_id);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_pot_entries_active_request_id_unique
-            ON pot_entries(stackcoin_request_id)
-            WHERE stackcoin_request_id IS NOT NULL AND status IN ('pending', 'confirmed');
+    if _is_legacy_db(db_path):
+        _stamp_legacy_db(db_path)
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_pot_entries_one_per_round
-            ON pot_entries(pot_id, discord_id, entry_round)
-            WHERE status IN ('pending', 'confirmed');
+    from alembic import command
+    from alembic.config import Config
 
-        CREATE TABLE IF NOT EXISTS user_bans (
-            ban_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            discord_id TEXT NOT NULL,
-            guild_id TEXT NOT NULL,
-            reason TEXT NOT NULL,
-            banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at TIMESTAMP NOT NULL
-        );
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).parent.parent / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    command.upgrade(cfg, "head")
 
-        CREATE INDEX IF NOT EXISTS idx_user_bans_lookup
-            ON user_bans(discord_id, guild_id, expires_at);
-
-        CREATE TABLE IF NOT EXISTS auto_enter_users (
-            discord_id TEXT NOT NULL,
-            guild_id   TEXT NOT NULL,
-            enabled_at TEXT NOT NULL DEFAULT (datetime('now')),
-            PRIMARY KEY (discord_id, guild_id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_auto_enter_guild
-            ON auto_enter_users(guild_id);
-    """)
-    conn.commit()
-    conn.close()
-    _migrate_schema()
     logger.info("Database initialized")
 
 
-def _migrate_schema() -> None:
-    """Idempotently add new columns and indexes to existing databases.
+def _is_legacy_db(db_path: Path) -> bool:
+    """Return True if the DB has user tables but no alembic_version table.
 
-    SQLite's ``CREATE TABLE IF NOT EXISTS`` skips tables that already exist,
-    so columns added in a later release never make it into older prod
-    databases. This helper inspects ``PRAGMA table_info`` and runs
-    ``ALTER TABLE ... ADD COLUMN`` for any missing columns. Safe to run
-    on every boot.
+    Such a database predates alembic and must be stamped before upgrade head
+    is called, otherwise alembic would try to recreate tables that already
+    exist (and fail).
     """
-    conn = get_connection()
+    if not db_path.exists():
+        return False
+    conn = sqlite3.connect(str(db_path))
     try:
-        pots_cols = {row["name"] for row in conn.execute("PRAGMA table_info(pots)")}
-        if "current_round" not in pots_cols:
-            conn.execute(
-                "ALTER TABLE pots ADD COLUMN current_round INTEGER NOT NULL DEFAULT 1"
-            )
-
-        entries_cols = {row["name"] for row in conn.execute("PRAGMA table_info(pot_entries)")}
-        if "entry_round" not in entries_cols:
-            conn.execute(
-                "ALTER TABLE pot_entries ADD COLUMN entry_round INTEGER NOT NULL DEFAULT 1"
-            )
-
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pot_entries_one_per_round "
-            "ON pot_entries(pot_id, discord_id, entry_round) "
-            "WHERE status IN ('pending', 'confirmed')"
-        )
-        conn.commit()
+        has_alembic = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+        ).fetchone() is not None
+        if has_alembic:
+            return False
+        has_pots = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='pots'"
+        ).fetchone() is not None
+        return has_pots
     finally:
         conn.close()
+
+
+def _stamp_legacy_db(db_path: Path) -> None:
+    """Stamp a legacy pre-alembic database to the initial baseline migration."""
+    from alembic import command
+    from alembic.config import Config
+
+    logger.info(
+        f"Legacy pre-alembic database detected at {db_path}; stamping to 0001_initial"
+    )
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).parent.parent / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    command.stamp(cfg, "0001_initial")
 
 
 def get_active_pot(conn, guild_id: str) -> dict | None:
