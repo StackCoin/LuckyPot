@@ -10,6 +10,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev
 
 COPY luckypot/ luckypot/
+COPY alembic/ alembic/
 COPY lucky_pot.py ./
 
 CMD ["uv", "run", "python", "lucky_pot.py"]
